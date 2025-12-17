@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Send, User, Ghost, LogOut, Sparkles, AlertCircle, RefreshCw, Reply, X, EyeOff, Image as ImageIcon
+  Send, User, Ghost, LogOut, Sparkles, AlertCircle, RefreshCw, Reply, X, EyeOff, Image as ImageIcon, Trash2
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
@@ -403,6 +403,17 @@ export default function GhostChat() {
     setProfile({ name: '', color: '', id: '' });
   };
 
+  const purgeMessages = async () => {
+    if (!window.confirm("Are you sure you want to purge the void? This will delete all messages for everyone.")) return;
+    try {
+      await remove(ref(db, `artifacts/${sanitizedAppId}/public/data/ghost_messages`));
+      showNotification("The void has been cleansed.");
+    } catch (error) {
+      console.error("Purge failed:", error);
+      showNotification("Failed to purge the void.");
+    }
+  };
+
   const postMessage = async (text: string, imageFile?: File) => {
     if ((!text.trim() && !imageFile) || !user) return;
 
@@ -575,6 +586,14 @@ export default function GhostChat() {
             title={poltergeistMode ? "Disable Poltergeist Mode" : "Enable Poltergeist Mode"}
           >
             {poltergeistMode ? <EyeOff size={18} /> : <Ghost size={18} />}
+          </button>
+
+          <button
+            onClick={purgeMessages}
+            className="p-2.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all duration-300 hover:rotate-12 active:scale-90"
+            title="Purge Memory"
+          >
+            <Trash2 size={18} />
           </button>
 
           <button
