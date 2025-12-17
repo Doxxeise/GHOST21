@@ -49,6 +49,7 @@ interface Message {
     id: string;
     senderName: string;
     text: string;
+    startImage?: string;
   };
   isPoltergeist?: boolean;
   startImage?: string;
@@ -438,7 +439,8 @@ export default function GhostChat() {
         payload.replyTo = {
           id: replyingTo.id,
           senderName: replyingTo.senderName,
-          text: replyingTo.text
+          text: replyingTo.text,
+          startImage: replyingTo.startImage
         };
       }
 
@@ -639,7 +641,10 @@ export default function GhostChat() {
                       <Reply size={10} className="scale-x-[-1]" />
                       {msg.replyTo.senderName}
                     </div>
-                    <div className="truncate opacity-60 italic">"{msg.replyTo.text}"</div>
+                    <div className="truncate opacity-60 italic flex items-center gap-1">
+                      {msg.replyTo.startImage && <ImageIcon size={12} className="text-slate-400" />}
+                      <span>"{msg.replyTo.text || 'Image'}"</span>
+                    </div>
                   </div>
                 )}
 
@@ -680,7 +685,10 @@ export default function GhostChat() {
               <Reply size={14} className="scale-x-[-1] text-indigo-400 shrink-0" />
               <div className="flex flex-col">
                 <span className="font-bold text-indigo-300">Replying to {replyingTo.senderName}</span>
-                <span className="opacity-60 truncate max-w-[200px] md:max-w-md italic">"{replyingTo.text}"</span>
+                <span className="opacity-60 truncate max-w-[200px] md:max-w-md italic flex items-center gap-1">
+                  {replyingTo.startImage && <ImageIcon size={12} />}
+                  <span>"{replyingTo.text || 'Image'}"</span>
+                </span>
               </div>
             </div>
             <button onClick={() => setReplyingTo(null)} className="p-1.5 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-colors">
@@ -692,6 +700,29 @@ export default function GhostChat() {
         <div className={`
           relative bg-black/40 backdrop-blur-3xl border border-white/10 transition-all duration-500 rounded-3xl p-1.5 flex items-end gap-2 shadow-2xl focus-within:border-white/20 z-10
         `}>
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files?.[0]) {
+                const file = e.target.files[0];
+                postMessage("", file);
+                e.target.value = ''; // Reset
+              }
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            className="p-3.5 mb-1 rounded-[1rem] transition-all transform active:scale-95 text-slate-400 hover:text-white hover:bg-white/10 disabled:opacity-50"
+            title="Send Image"
+          >
+            {isUploading ? <RefreshCw size={18} className="animate-spin" /> : <ImageIcon size={18} />}
+          </button>
+
 
           {/* Text Area */}
           <div className="flex-1 relative">
@@ -714,29 +745,6 @@ export default function GhostChat() {
             className={`p-3.5 mb-1 rounded-[1rem] shadow-lg transition-all transform active:scale-95 disabled:opacity-50 disabled:scale-100 bg-white text-black hover:bg-slate-200`}
           >
             <Send size={18} className="ml-0.5" strokeWidth={2.5} />
-          </button>
-
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              if (e.target.files?.[0]) {
-                const file = e.target.files[0];
-                postMessage("", file);
-                e.target.value = ''; // Reset
-              }
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
-            className="p-3.5 mb-1 rounded-[1rem] transition-all transform active:scale-95 text-slate-400 hover:text-white hover:bg-white/10 disabled:opacity-50"
-            title="Send Image"
-          >
-            {isUploading ? <RefreshCw size={18} className="animate-spin" /> : <ImageIcon size={18} />}
           </button>
         </div>
       </footer>
