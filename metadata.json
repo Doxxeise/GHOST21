@@ -1,0 +1,7 @@
+{
+  "name": "GhostChat",
+  "description": "An anonymous, ethereal chat application with voice capabilities and AI-powered features.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
