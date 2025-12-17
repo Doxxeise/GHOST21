@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Send, User, Ghost, LogOut, Sparkles, AlertCircle, RefreshCw, Reply, X, EyeOff, Image as ImageIcon, Trash2
+  Send, User, Ghost, LogOut, Sparkles, AlertCircle, RefreshCw, Reply, X, EyeOff, Image as ImageIcon, Trash2, ShieldAlert
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
@@ -8,8 +8,10 @@ import {
 } from 'firebase/auth';
 import {
   getDatabase, ref, push, onValue, query,
-  orderByChild, limitToLast, serverTimestamp, onChildAdded, set, remove
+  orderByChild, limitToLast, serverTimestamp, onChildAdded, set, remove, runTransaction
 } from 'firebase/database';
+
+import { askOracle } from './utils/gemini';
 
 // --- FIREBASE CONFIGURATION ---
 const firebaseConfig = {
@@ -53,6 +55,27 @@ interface Message {
   };
   isPoltergeist?: boolean;
   startImage?: string;
+  poll?: {
+    target: string;
+    yes: number;
+    no: number;
+    deadline: number;
+    resolved: boolean;
+  };
+}
+
+interface Invitation {
+  senderId: string;
+  senderName: string;
+  senderColor: string;
+  roomId: string;
+  timestamp: number;
+}
+
+interface PrivateRoom {
+  id: string;
+  partnerName: string;
+  partnerColor: string;
 }
 
 const compressImage = (file: File): Promise<string> => {
@@ -237,6 +260,171 @@ const EmojiDock = ({ onReact }: { onReact: (emoji: string) => void }) => {
 // === ANIMATED EMOJI LIBRARY (END) ===
 // ==========================================
 
+// ==========================================
+// === SECRET ANIMATIONS (START) ===
+// ==========================================
+
+// Sound Engine (Silenced)
+const useSoundEffects = () => {
+  return {
+    playPing: () => { },
+    playWarp: () => { },
+    playSecret: () => { }
+  };
+};
+
+// Typing Presence Hook
+const useTypingPresence = (user: UserProfile | null, roomId: string | null) => {
+  const [typingUsers, setTypingUsers] = useState<{ id: string, name: string }[]>([]);
+
+  // Listen for others typing
+  useEffect(() => {
+    const path = roomId
+      ? `artifacts/${sanitizedAppId}/public/data/typing/${roomId}`
+      : `artifacts/${sanitizedAppId}/public/data/typing/public`;
+
+    const typingRef = ref(db, path);
+    const unsubscribe = onValue(typingRef, (snap) => {
+      const data = snap.val() || {};
+      const activeTypers = Object.entries(data)
+        .filter(([id, val]: [string, any]) => val.timestamp > Date.now() - 3000)
+        .map(([id, val]: [string, any]) => ({ id, name: val.name }));
+      setTypingUsers(activeTypers);
+    });
+    return () => unsubscribe();
+  }, [roomId, user]);
+  // Update my typing status
+  const updateTyping = async (isTyping: boolean) => {
+    if (!user) return;
+    const path = roomId
+      ? `artifacts/${sanitizedAppId}/public/data/typing/${roomId}/${user.id}`
+      : `artifacts/${sanitizedAppId}/public/data/typing/public/${user.id}`;
+
+    if (isTyping) {
+      await set(ref(db, path), { name: user.name, timestamp: Date.now() });
+    } else {
+      await remove(ref(db, path));
+    }
+  };
+
+  return { typingUsers, updateTyping };
+};
+
+const useKonamiCode = () => {
+  const [isMatrix, setIsMatrix] = useState(false);
+  const sequence = useRef<string[]>([]);
+  const KONAMI = ["ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowLeft", "ArrowRight", "b", "a"];
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      sequence.current = [...sequence.current, e.key].slice(-10);
+      if (JSON.stringify(sequence.current) === JSON.stringify(KONAMI)) {
+        setIsMatrix(prev => !prev);
+        sequence.current = [];
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+  return isMatrix;
+};
+
+const useKeywordTriggers = (inputText: string) => {
+  const [effect, setEffect] = useState<string | null>(null);
+
+  const checkTriggers = (textInput: string) => {
+    const text = textInput.toLowerCase().trim();
+    if (!text) return;
+
+    console.log("Checking trigger:", text); // DEBUG
+
+    const NSFW_WORDS = ['boobs', 'breast', 'dick', 'suck', 'fuck', 'fine', 'fine shii', 'ugly'];
+
+    if (text.includes('boom')) {
+      setEffect('boom'); setTimeout(() => setEffect(null), 500);
+    } else if (text.includes('void')) {
+      setEffect('void'); setTimeout(() => setEffect(null), 2000);
+    } else if (text.includes('spin')) {
+      setEffect('spin'); setTimeout(() => setEffect(null), 1000);
+    } else if (text.includes('glitch') || NSFW_WORDS.some(w => text.includes(w))) {
+      setEffect('glitch'); setTimeout(() => setEffect(null), 500);
+    } else if (text.includes('party')) {
+      setEffect(prev => (prev === 'party' ? null : 'party'));
+    } else if (text.includes('gravity')) {
+      setEffect(prev => (prev === 'gravity' ? null : 'gravity'));
+    } else if (text.includes('retro')) {
+      setEffect(prev => (prev === 'retro' ? null : 'retro'));
+    } else if (text.includes('crush') || text.includes('love')) {
+      setEffect('heartbeat'); setTimeout(() => setEffect(null), 3000);
+    } else if (text.includes('secret')) {
+      setEffect('secret-blur'); setTimeout(() => setEffect(null), 2000);
+    } else if (text.includes('67')) {
+      setEffect('wiggle'); setTimeout(() => setEffect(null), 1000);
+    } else if (text.includes('fly')) {
+      setEffect('ascend'); setTimeout(() => setEffect(null), 3000);
+    }
+  };
+
+  useEffect(() => {
+    checkTriggers(inputText);
+  }, [inputText]);
+
+  return { effect, checkTriggers };
+};
+
+const FloatingHearts = () => (
+  <div className="absolute inset-0 overflow-hidden pointer-events-none z-[50]">
+    {[...Array(10)].map((_, i) => (
+      <div key={i} className="absolute text-pink-500 animate-float-up"
+        style={{
+          left: `${Math.random() * 100}%`,
+          bottom: '-10%',
+          fontSize: `${Math.random() * 20 + 20}px`,
+          animationDelay: `${Math.random() * 2}s`,
+          animationDuration: `${Math.random() * 2 + 3}s`
+        }}>
+        ♥
+      </div>
+    ))}
+  </div>
+);
+
+const MatrixRain = () => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*";
+    const fontSize = 14;
+    const columns = canvas.width / fontSize;
+    const drops: number[] = new Array(Math.ceil(columns)).fill(1);
+
+    const draw = () => {
+      ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#0F0";
+      ctx.font = fontSize + "px monospace";
+      for (let i = 0; i < drops.length; i++) {
+        const text = chars[Math.floor(Math.random() * chars.length)];
+        ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+          drops[i] = 0;
+        }
+        drops[i]++;
+      }
+    };
+    const interval = setInterval(draw, 33);
+    return () => clearInterval(interval);
+  }, []);
+  return <canvas ref={canvasRef} className="absolute inset-0 z-[5] pointer-events-none opacity-50 mix-blend-screen" />;
+};
+
+
 
 // --- ASSETS & HELPERS ---
 const AVATAR_COLORS = [
@@ -257,7 +445,7 @@ const getRandomName = () => GHOST_NAMES[Math.floor(Math.random() * GHOST_NAMES.l
 const getRandomColor = () => AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
 
 // --- VISUAL EFFECTS ---
-const SpiritDust = () => {
+const SpiritDust = ({ intensity = 0 }: { intensity?: number }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -283,8 +471,13 @@ const SpiritDust = () => {
     }
     const animate = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const speedMultiplier = 1 + (intensity * 5); // Speed up with intensity
+
       particles.forEach(p => {
-        p.x += p.vx; p.y += p.vy; p.phase += p.speed;
+        p.x += p.vx * speedMultiplier;
+        p.y += p.vy * speedMultiplier;
+        p.phase += p.speed * speedMultiplier;
+
         if (p.x < 0) p.x = canvas.width; if (p.x > canvas.width) p.x = 0;
         if (p.y < 0) p.y = canvas.height; if (p.y > canvas.height) p.y = 0;
         const currentAlpha = p.alpha + Math.sin(p.phase) * 0.15;
@@ -295,7 +488,7 @@ const SpiritDust = () => {
     };
     animate();
     return () => { window.removeEventListener('resize', resize); cancelAnimationFrame(animationId); };
-  }, []);
+  }, [intensity]);
   return <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none z-0 mix-blend-screen" />;
 };
 
@@ -303,6 +496,7 @@ export default function GhostChat() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile>({ name: '', color: '', id: '' });
+  const [originalProfile, setOriginalProfile] = useState<UserProfile | null>(null); // For masking
   const [view, setView] = useState('LOGIN');
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
@@ -314,10 +508,169 @@ export default function GhostChat() {
   const [isUploading, setIsUploading] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
   const [serverTimeOffset, setServerTimeOffset] = useState(0);
+  const [showAdmin, setShowAdmin] = useState(false);
   const { enabled: poltergeistMode, toggleMode: togglePoltergeist } = usePoltergeistMode();
+
+  // Private Messaging State
+  const [currentRoom, setCurrentRoom] = useState<PrivateRoom | null>(null);
+  const [incomingInvite, setIncomingInvite] = useState<Invitation | null>(null);
+  const [isPairing, setIsPairing] = useState(false);
+  const [isTunneling, setIsTunneling] = useState(false);
 
   // Initialize Emoji Library
   const { floatingEmojis, triggerReaction } = useEmojiLibrary(user);
+
+  // Secret Animations
+  const { playPing, playWarp, playSecret } = useSoundEffects();
+  const isMatrix = useKonamiCode();
+  const { effect: keywordEffect, checkTriggers } = useKeywordTriggers(inputText);
+
+  // Typing Presence
+  const { typingUsers, updateTyping } = useTypingPresence(profile.id ? profile : null, currentRoom?.id || null);
+
+  // Activity Level for Background
+  const [activityLevel, setActivityLevel] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setActivityLevel(prev => {
+        if (typingUsers.length > 0) {
+          return Math.min(1, prev + 0.05); // Rise when typing
+        } else {
+          return Math.max(0, prev - 0.02); // Decay slowly
+        }
+      });
+    }, 100);
+    return () => clearInterval(timer);
+  }, [typingUsers.length]);
+
+  // Sound triggers
+  useEffect(() => {
+    if (messages.length > 0 && messages[messages.length - 1].senderId !== user?.uid) {
+      playPing();
+    }
+  }, [messages, user]);
+
+  useEffect(() => {
+    if (isTunneling) playWarp();
+  }, [isTunneling]);
+
+  useEffect(() => {
+    if (keywordEffect) playSecret();
+  }, [keywordEffect]);
+
+  // Listen for Invitation Responses (Handshake Completion)
+  useEffect(() => {
+    if (!user) return;
+    const responseRef = ref(db, `artifacts/${sanitizedAppId}/public/data/invitation_responses/${user.uid}`);
+
+    const unsubscribe = onValue(responseRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data && data.accepted) {
+        // Handshake Complete!
+        setIsPairing(false); // Stop waiting spinner
+        showNotification(`${data.responderName} accepted! Entering private channel...`);
+
+        setIsTunneling(true);
+        setTimeout(() => {
+          setCurrentRoom({
+            id: data.roomId,
+            partnerName: data.responderName,
+            partnerColor: data.responderColor
+          });
+          // Cleanup response
+          remove(responseRef);
+          setIsTunneling(false);
+        }, 1500);
+      }
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  // Combine persistent effects for the container
+  const containerClasses = [
+    isMatrix ? 'font-mono' : '',
+    keywordEffect === 'boom' ? 'animate-shake' : '',
+    keywordEffect === 'void' ? 'animate-void' : '',
+    keywordEffect === 'spin' ? 'animate-spin-360' : '',
+    keywordEffect === 'glitch' ? 'animate-glitch-ui' : '',
+    keywordEffect === 'party' ? 'animate-rainbow-bg' : '',
+    keywordEffect === 'gravity' ? 'animate-gravity' : '',
+    keywordEffect === 'retro' ? 'brightness-75 sepia contrast-125 saturate-50' : '',
+    keywordEffect === 'heartbeat' ? 'animate-heartbeat-tint' : '',
+    keywordEffect === 'secret-blur' ? 'blur-sm' : '',
+    keywordEffect === 'wiggle' ? 'animate-wiggle' : '',
+    keywordEffect === 'ascend' ? 'animate-ascension' : ''
+  ].filter(Boolean).join(' ');
+
+
+
+  const sendInvitation = async (targetId: string, targetName: string) => {
+    if (!user || targetId === user.uid) return;
+    if (currentRoom) { showNotification("Leave private chat first."); return; }
+
+    const roomId = [user.uid, targetId].sort().join('_');
+    const invite: Invitation = {
+      senderId: user.uid,
+      senderName: profile.name,
+      senderColor: profile.color,
+      roomId: roomId,
+      timestamp: Date.now()
+    };
+
+    try {
+      await set(ref(db, `artifacts/${sanitizedAppId}/public/data/invitations/${targetId}`), invite);
+      showNotification(`Request sent to ${targetName}. Waiting for acceptance...`);
+      // Removed auto-join logic. Now waiting for listener.
+    } catch (err) {
+      console.error(err);
+      showNotification("Failed to send invite.");
+    }
+  };
+
+  const acceptInvitation = async () => {
+    if (!incomingInvite || !user) return;
+    setIsPairing(true);
+
+    // Notify Sender
+    await set(ref(db, `artifacts/${sanitizedAppId}/public/data/invitation_responses/${incomingInvite.senderId}`), {
+      accepted: true,
+      roomId: incomingInvite.roomId,
+      responderName: profile.name,
+      responderColor: profile.color,
+      timestamp: Date.now()
+    });
+
+    await remove(ref(db, `artifacts/${sanitizedAppId}/public/data/invitations/${user.uid}`));
+
+    setTimeout(() => {
+      setIsPairing(false);
+      setIsTunneling(true);
+      setCurrentRoom({
+        id: incomingInvite.roomId,
+        partnerName: incomingInvite.senderName,
+        partnerColor: incomingInvite.senderColor
+      });
+      setIncomingInvite(null);
+      setTimeout(() => setIsTunneling(false), 1500);
+    }, 1500);
+  };
+
+  const declineInvitation = async () => {
+    if (!user) return;
+    setIncomingInvite(null);
+    await remove(ref(db, `artifacts/${sanitizedAppId}/public/data/invitations/${user.uid}`));
+  };
+
+
+  const leavePrivateChat = () => {
+    setIsTunneling(true);
+    setTimeout(() => {
+      setCurrentRoom(null);
+      setIsTunneling(false);
+      showNotification("Disconnected. Returning to the Void.");
+    }, 1000);
+  };
+
 
   // Connection Status & Clock Skew Listener
   useEffect(() => {
@@ -369,12 +722,17 @@ export default function GhostChat() {
     return () => unsubscribe();
   }, []);
 
-  // Messages Listener
+  // Messages Listener (Public & Private)
   useEffect(() => {
-    if (!user || view !== 'CHAT') return;
+    if (!user) return;
+
+    // Determine which path to listen to
+    const messagesPath = currentRoom
+      ? `artifacts/${sanitizedAppId}/public/data/private_chats/${currentRoom.id}`
+      : `artifacts/${sanitizedAppId}/public/data/ghost_messages`;
 
     const messagesRef = query(
-      ref(db, `artifacts/${sanitizedAppId}/public/data/ghost_messages`),
+      ref(db, messagesPath),
       orderByChild('timestamp'),
       limitToLast(50)
     );
@@ -393,8 +751,31 @@ export default function GhostChat() {
       showNotification("Disconnected from the void.");
     });
 
+
+
     return () => unsubscribe();
-  }, [user, view]);
+  }, [user, view, currentRoom]); // Re-run when switching rooms
+
+  // Invitation Listener
+  useEffect(() => {
+    if (!user) return;
+    const inviteRef = ref(db, `artifacts/${sanitizedAppId}/public/data/invitations/${user.uid}`);
+    const unsubscribe = onValue(inviteRef, (snapshot) => {
+      const val = snapshot.val();
+      if (val) {
+        // Check if it's fresh (within last 30s)
+        if (Date.now() - val.timestamp < 30000) {
+          setIncomingInvite(val);
+        } else {
+          // Auto-decline stale invites
+          remove(inviteRef);
+        }
+      } else {
+        setIncomingInvite(null);
+      }
+    });
+    return () => unsubscribe();
+  }, [user]);
 
   useEffect(() => {
     if (replyingTo && inputRef.current) {
@@ -406,6 +787,16 @@ export default function GhostChat() {
     setTimeout(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, 100);
   };
 
+
+
+  const togglePoltergeistMode = () => {
+    togglePoltergeist();
+    const mode = !poltergeistMode;
+    // Always notify, not just on enable
+    showNotification(mode ? "Poltergeist Mode Enabled 👻" : "Poltergeist Mode Disabled");
+  }
+
+  // --- HANDLERS ---
   const handleLogin = (name: string, color: string) => {
     if (!user) return;
     const newProfile = { name: name || getRandomName(), color: color || getRandomColor(), id: user.uid };
@@ -414,11 +805,106 @@ export default function GhostChat() {
     setView('CHAT');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await signOut(auth);
     localStorage.removeItem('ghost_profile');
-    signOut(auth);
     setView('LOGIN');
     setProfile({ name: '', color: '', id: '' });
+  };
+
+  // --- MESSAGING ---
+  const handleEmojiReact = async (emoji: string) => {
+    if (!inputText) {
+      triggerReaction(emoji);
+      return;
+    }
+    setInputText(prev => prev + emoji);
+  };
+
+  const sendMessage = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!inputText.trim()) return;
+
+    // Command: /mask [name]
+    if (inputText.startsWith('/mask')) {
+      if (originalProfile) {
+        // Restore identity
+        setProfile(originalProfile);
+        setOriginalProfile(null);
+        showNotification("Identity Restored.");
+      } else {
+        // Mask identity
+        const args = inputText.split(' ');
+        const customName = args.length > 1 ? args.slice(1).join(' ') : getRandomName();
+        const maskedProfile = {
+          ...profile,
+          name: customName,
+          color: getRandomColor()
+        };
+        setOriginalProfile(profile);
+        setProfile(maskedProfile);
+        showNotification(`Identity Masked: ${customName}`);
+      }
+      setInputText('');
+      return;
+    }
+
+    // Capture text before clearing
+    const msgText = inputText;
+
+    await postMessage(msgText);
+    setInputText('');
+    updateTyping(false);
+    setActivityLevel(prev => Math.min(1, prev + 0.3)); // Boost bg on send
+
+    // Oracle Integration
+    const isOracleMention = msgText.toLowerCase().includes('@oracle');
+    const isOracleReply = replyingTo?.senderId === 'THE_ORACLE_BOT';
+
+    if (isOracleMention || isOracleReply) {
+      setTimeout(async () => {
+        const contextPrompt = isOracleReply
+          ? `(User is replying to your previous message: "${replyingTo.text}")\nUser says: ${msgText}`
+          : msgText;
+
+        const oracleResponse = await askOracle(contextPrompt);
+        // Post as Oracle
+        // We need to bypass the "user" check in postMessage for a bot, or impersonate one.
+        // Since postMessage relies on 'user' state, we can manually push to DB like a bot.
+
+        let finalText = oracleResponse;
+        let pollData = null;
+
+        // Parse VOTE_KICK
+        if (oracleResponse.includes('[VOTE_KICK:')) {
+          const match = oracleResponse.match(/\[VOTE_KICK:\s*(.*?)\]/);
+          if (match) {
+            const targetName = match[1].trim();
+            finalText = oracleResponse.replace(match[0], '').trim();
+            pollData = {
+              target: targetName,
+              yes: 0,
+              no: 0,
+              deadline: Date.now() + 15000, // 15s duration
+              resolved: false
+            };
+          }
+        }
+
+        const messagesPath = currentRoom
+          ? `artifacts/${sanitizedAppId}/public/data/private_chats/${currentRoom.id}`
+          : `artifacts/${sanitizedAppId}/public/data/ghost_messages`;
+
+        await push(ref(db, messagesPath), {
+          text: finalText,
+          senderId: "THE_ORACLE_BOT",
+          senderName: "🔮 The Oracle",
+          senderColor: "from-amber-300 to-yellow-500", // Gold
+          timestamp: serverTimestamp(),
+          poll: pollData
+        });
+      }, 2000); // 2s delay for "thinking"
+    }
   };
 
   const purgeMessages = async () => {
@@ -432,6 +918,9 @@ export default function GhostChat() {
     }
   };
 
+
+
+
   const postMessage = async (text: string, imageFile?: File) => {
     if ((!text.trim() && !imageFile) || !user) return;
     if (isUploading) return;
@@ -439,19 +928,80 @@ export default function GhostChat() {
     setIsUploading(true);
     try {
       let imageBase64: string | null = null;
-      // Compression
+      // Compression & Glitch Effect
       if (imageFile) {
         try {
-          imageBase64 = await compressImage(imageFile);
+          // 1. Compress first (optional, but good for speed)
+          // 2. Apply Glitch Effect
+          const glitchAndCompress = async (file: File): Promise<string> => {
+            return new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.readAsDataURL(file);
+              reader.onload = (e) => {
+                const img = new Image();
+                img.src = e.target?.result as string;
+                img.onload = () => {
+                  const canvas = document.createElement('canvas');
+                  const w = img.width; const h = img.height;
+                  canvas.width = w; canvas.height = h;
+                  const ctx = canvas.getContext('2d');
+                  if (!ctx) { reject("No Context"); return; }
+
+                  // Draw Original
+                  ctx.drawImage(img, 0, 0);
+
+                  // --- GLITCH ALGORITHM ---
+                  // Random slice and shift
+                  const slices = 20;
+                  const maxShift = w * 0.1; // 10% shift
+
+                  for (let i = 0; i < slices; i++) {
+                    const y = Math.random() * h;
+                    const hSlice = Math.random() * (h / 10);
+                    const shift = (Math.random() - 0.5) * maxShift;
+                    try {
+                      const sliceData = ctx.getImageData(0, y, w, hSlice);
+                      ctx.putImageData(sliceData, shift, y);
+                    } catch (err) { /* Ignore OOB errors */ }
+                  }
+
+                  // Color Channel Shift (RGB Split)
+                  const imageData = ctx.getImageData(0, 0, w, h);
+                  const data = imageData.data;
+                  const offset = (w * 4) * 5; // 5 lines downish
+
+                  for (let i = 0; i < data.length; i += 4) {
+                    // Red Channel shift
+                    if (i + offset < data.length) {
+                      data[i] = data[i + offset];
+                    }
+                  }
+                  ctx.putImageData(imageData, 0, 0);
+
+                  // Resolve
+                  resolve(canvas.toDataURL('image/jpeg', 0.6));
+                };
+                img.onerror = reject;
+              };
+              reader.onerror = reject;
+            });
+          };
+
+          imageBase64 = await glitchAndCompress(imageFile);
         } catch (e) {
-          console.error("Compression failed", e);
-          showNotification("Image processing failed.");
+          console.error("Glitch failed", e);
+          showNotification("Glitch upload failed.");
           setIsUploading(false);
           return;
         }
       }
 
-      const messagesListRef = ref(db, `artifacts/${sanitizedAppId}/public/data/ghost_messages`);
+      // Dynamic Path based on Room
+      const messagesPath = currentRoom
+        ? `artifacts/${sanitizedAppId}/public/data/private_chats/${currentRoom.id}`
+        : `artifacts/${sanitizedAppId}/public/data/ghost_messages`;
+
+      const messagesListRef = ref(db, messagesPath);
       const payload: any = {
         text: text,
         senderId: user.uid,
@@ -482,12 +1032,7 @@ export default function GhostChat() {
     }
   };
 
-  const sendMessage = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!inputText.trim()) return;
-    await postMessage(inputText);
-    setInputText('');
-  };
+
 
   const handleReaction = (emoji: string) => {
     triggerReaction(emoji);
@@ -538,10 +1083,20 @@ export default function GhostChat() {
   }
 
   return (
-    <div className="flex flex-col h-screen w-full bg-[#050505] text-slate-200 font-sans overflow-hidden relative selection:bg-purple-500/30">
+    <div className={`flex flex-col h-screen w-full bg-[#050505] text-slate-200 font-sans overflow-hidden relative selection:bg-purple-500/30 ${isTunneling ? 'animate-tunnel' : ''} ${containerClasses}`}>
+
+      {/* Secret Overlays */}
+      {isMatrix && <MatrixRain />}
+      {keywordEffect === 'heartbeat' && <FloatingHearts />}
+      {keywordEffect === 'party' && (
+        <div className="absolute inset-0 pointer-events-none z-[60] overflow-hidden">
+          {/* Simple CSS Confetti could go here, for now simpler shim */}
+          <div className="w-full h-full bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-50 animate-pulse mix-blend-screen"></div>
+        </div>
+      )}
 
       {/* Background Visuals */}
-      <SpiritDust />
+      <SpiritDust intensity={activityLevel} />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,_rgba(24,24,27,0)_0%,_rgba(0,0,0,0.8)_100%)] z-0 pointer-events-none" />
       <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-[0.02] z-0 mix-blend-overlay" />
 
@@ -563,20 +1118,128 @@ export default function GhostChat() {
         .animate-slide-up { animation: slideUp 0.6s ease-out forwards; }
 
         @keyframes fadeOut { from { opacity: 1; filter: blur(0px); } to { opacity: 0; filter: blur(4px); } }
+        
+        /* Quantum Tunneling Effect */
+        @keyframes tunnel {
+            0% { transform: scale(1) rotate(0deg); opacity: 1; filter: hue-rotate(0deg); }
+            50% { transform: scale(1.5) rotate(5deg); opacity: 0.5; filter: hue-rotate(90deg) blur(10px); }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; filter: hue-rotate(0deg); }
+        }
+        .animate-tunnel { animation: tunnel 1.5s cubic-bezier(0.7, 0, 0.3, 1) forwards; }
+
+        /* Secret Keyframes */
+        @keyframes shake { 
+            0%, 100% { transform: translate(0, 0); } 
+            10%, 30%, 50%, 70%, 90% { transform: translate(-5px, 5px); } 
+            20%, 40%, 60%, 80% { transform: translate(5px, -5px); } 
+        }
+        .animate-shake { animation: shake 0.5s linear; }
+
+        @keyframes voidFade { 0% { opacity: 1; filter: brightness(1); } 50% { opacity: 0; filter: brightness(0); } 100% { opacity: 1; filter: brightness(1); } }
+        .animate-void { animation: voidFade 2s ease-in-out; }
+
+        @keyframes spin360 { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .animate-spin-360 { animation: spin360 1s ease-in-out; }
+
+        @keyframes glitchUI { 
+            0% { clip-path: inset(50% 0 30% 0); transform: translate(-5px,0); }
+            20% { clip-path: inset(20% 0 60% 0); transform: translate(5px,0); }
+            40% { clip-path: inset(40% 0 40% 0); transform: translate(-5px,0); }
+            60% { clip-path: inset(80% 0 5% 0); transform: translate(5px,0); }
+            80% { clip-path: inset(10% 0 80% 0); transform: translate(-5px,0); }
+            100% { clip-path: inset(0 0 0 0); transform: translate(0,0); }
+        }
+        .animate-glitch-ui { animation: glitchUI 0.3s steps(5) infinite; }
+
+        @keyframes rainbowBg { 
+            0% { filter: hue-rotate(0deg) saturate(2); } 
+            100% { filter: hue-rotate(360deg) saturate(2); } 
+        }
+        .animate-rainbow-bg { animation: rainbowBg 2s linear infinite; }
+
+        .animate-gravity { transform: rotate(5deg) skewX(5deg) translateY(20px); transition: all 1s ease; }
+
+        @keyframes floatUp { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-100vh); opacity: 0; } }
+        .animate-float-up { animation: floatUp 4s linear infinite; }
+
+        .animate-heartbeat-tint { box-shadow: inset 0 0 100px rgba(236, 72, 153, 0.3); }
+        
+        @keyframes goldPulse { 0%, 100% { box-shadow: inset 0 0 0 rgba(234, 179, 8, 0); } 50% { box-shadow: inset 0 0 50px rgba(234, 179, 8, 0.5); } }
+        .animate-gold-pulse { animation: goldPulse 2s infinite; }
+        
+        @keyframes ascend { 0% { transform: translateY(0) scale(1); opacity: 1; } 100% { transform: translateY(-300px) scale(0); opacity: 0; } }
+        .animate-ascension { animation: ascend 3s ease-in forwards; pointer-events: none; }
+
+        @keyframes wiggle { 
+            0%, 100% { transform: translateY(0); } 
+            25% { transform: translateY(-15px); } 
+            75% { transform: translateY(15px); } 
+        }
+        .animate-wiggle { animation: wiggle 0.5s ease-in-out infinite; }
       `}</style>
+
+
+
+      {/* Pairing Overlay */}
+      {
+        isPairing && (
+          <div className="absolute inset-0 z-[100] bg-black/90 flex flex-col items-center justify-center p-8 backdrop-blur-xl animate-enter">
+            <div className="relative">
+              <div className="absolute inset-0 bg-indigo-500 blur-3xl opacity-20 animate-pulse"></div>
+              <RefreshCw size={64} className="text-indigo-400 animate-spin duration-700" />
+            </div>
+            <h2 className="mt-8 text-2xl font-bold text-white tracking-widest uppercase scanner-text">
+              Establishing Neural Link...
+            </h2>
+            <div className="w-64 h-1 bg-gray-800 rounded-full mt-6 overflow-hidden">
+              <div className="h-full bg-indigo-500 animate-[loading_1.5s_ease-in-out_infinite]" style={{ width: '100%' }}></div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Pairing Request Modal */}
+      {
+        incomingInvite && !isPairing && (
+          <div className="absolute top-24 left-1/2 -translate-x-1/2 z-[90] w-full max-w-sm px-4 animate-slide-up">
+            <div className="bg-slate-900/90 backdrop-blur-xl border border-indigo-500/50 p-6 rounded-2xl shadow-[0_0_50px_rgba(79,70,229,0.3)] relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 z-0"></div>
+              <div className="relative z-10 text-center">
+                <div className={`w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br ${incomingInvite.senderColor} flex items-center justify-center shadow-lg animate-bounce`}>
+                  <User size={32} className="text-white" />
+                </div>
+                <h3 className="text-lg font-bold text-white mb-1">Incoming Signal</h3>
+                <p className="text-indigo-200 text-sm mb-6">
+                  <strong className="text-white">{incomingInvite.senderName}</strong> wants to initiate a private link.
+                </p>
+                <div className="flex gap-3">
+                  <button onClick={declineInvitation} className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 font-bold text-sm transition-colors">
+                    Decline
+                  </button>
+                  <button onClick={acceptInvitation} className={`flex-1 py-3 rounded-xl bg-gradient-to-r ${incomingInvite.senderColor} text-white font-bold text-sm shadow-lg transition-all hover:scale-105`}>
+                    Accept
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
 
       {/* Render the Library's Emoji Layer */}
       <EmojiOverlay emojis={floatingEmojis} />
 
       {/* Notifications */}
-      {notification && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 animate-enter">
-          <div className="bg-slate-900/80 backdrop-blur-md border border-purple-500/30 px-6 py-2 rounded-full shadow-[0_0_30px_rgba(168,85,247,0.2)] flex items-center gap-2">
-            <Sparkles size={14} className="text-purple-400" />
-            <span className="text-xs font-medium text-purple-100 tracking-wide">{notification}</span>
+      {
+        notification && (
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 animate-enter">
+            <div className="bg-slate-900/80 backdrop-blur-md border border-purple-500/30 px-6 py-2 rounded-full shadow-[0_0_30px_rgba(168,85,247,0.2)] flex items-center gap-2">
+              <Sparkles size={14} className="text-purple-400" />
+              <span className="text-xs font-medium text-purple-100 tracking-wide">{notification}</span>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       <header className="relative z-20 h-16 border-b border-white/5 bg-black/20 backdrop-blur-2xl flex items-center justify-between px-6 shadow-2xl">
         <div className="flex items-center gap-3 group cursor-default">
@@ -593,6 +1256,13 @@ export default function GhostChat() {
         </div>
 
         <div className="flex items-center gap-3">
+          {currentRoom && (
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-200">
+              <span className={`w-2 h-2 rounded-full bg-gradient-to-r ${currentRoom.partnerColor !== 'unknown' ? currentRoom.partnerColor : 'from-indigo-400 to-purple-400'} animate-pulse`}></span>
+              <span className="text-xs font-bold tracking-wide">PRIVATE LINK: {currentRoom.partnerName}</span>
+            </div>
+          )}
+
           <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/5 hover:border-white/10 transition-all cursor-default">
             <div className={`w-2 h-2 rounded-full bg-gradient-to-r ${profile.color} shadow-lg`}></div>
             <span className="text-xs font-bold text-slate-300 tracking-wide">{profile.name}</span>
@@ -606,23 +1276,69 @@ export default function GhostChat() {
             {poltergeistMode ? <EyeOff size={18} /> : <Ghost size={18} />}
           </button>
 
-          <button
-            onClick={purgeMessages}
-            className="p-2.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all duration-300 hover:rotate-12 active:scale-90"
-            title="Purge Memory"
-          >
-            <Trash2 size={18} />
-          </button>
+          {currentRoom && (
+            <button
+              onClick={leavePrivateChat}
+              className="p-2.5 text-red-400 hover:bg-red-500/20 rounded-xl transition-all duration-300 hover:scale-105 shadow-[0_0_15px_rgba(239,68,68,0.2)]"
+              title="Disconnect Private Link"
+            >
+              <LogOut size={18} />
+            </button>
+          )}
+
+          {/* Admin Toggle */}
+          {profile.name === 'thecolorfulbox' && (
+            <button
+              onClick={() => setShowAdmin(true)}
+              className="p-2.5 text-amber-400 hover:bg-amber-500/10 rounded-xl transition-all duration-300 hover:rotate-12 active:scale-90"
+              title="Admin Panel"
+            >
+              <ShieldAlert size={18} />
+            </button>
+          )}
 
           <button
             onClick={handleLogout}
             className="p-2.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all duration-300 hover:rotate-90 active:scale-90"
-            title="Disconnect"
+            title="Log Out"
           >
             <LogOut size={18} />
           </button>
         </div>
       </header>
+
+      {/* Admin Modal */}
+      {showAdmin && (
+        <div className="absolute inset-0 z-[200] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6 animate-enter">
+          <div className="bg-slate-900 border border-amber-500/30 p-8 rounded-3xl max-w-md w-full shadow-[0_0_50px_rgba(245,158,11,0.2)]">
+            <div className="flex items-center gap-3 mb-6 text-amber-400">
+              <ShieldAlert size={32} />
+              <h2 className="text-2xl font-bold tracking-widest uppercase">Admin Console</h2>
+            </div>
+            <p className="text-slate-400 mb-8 font-mono text-sm leading-relaxed">
+              Welcome, <span className="text-white font-bold">thecolorfulbox</span>.
+              <br />
+              You have root access to The Void.
+            </p>
+
+            <div className="space-y-4">
+              <button
+                onClick={() => { purgeMessages(); setShowAdmin(false); }}
+                className="w-full py-4 bg-red-900/30 border border-red-500/50 hover:bg-red-500 hover:text-white text-red-400 rounded-xl font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-3"
+              >
+                <Trash2 size={20} /> Purge All Memories
+              </button>
+
+              <button
+                onClick={() => setShowAdmin(false)}
+                className="w-full py-3 text-slate-500 hover:text-white font-bold uppercase tracking-widest text-xs"
+              >
+                Close Console
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="relative z-10 flex-1 overflow-y-auto p-4 md:p-6 space-y-6 scrollbar-thin scrollbar-thumb-white/5 scrollbar-track-transparent">
         {/* Welcome Banner */}
@@ -660,16 +1376,22 @@ export default function GhostChat() {
             >
               {showHeader && (
                 <div className={`flex items-center gap-2 mb-1.5 opacity-60 ${isMe ? 'flex-row-reverse' : 'flex-row'} transition-opacity group-hover:opacity-100`}>
-                  <span className={`text-[10px] font-bold tracking-wide ${isMe ? 'text-indigo-300' : 'text-slate-400'}`}>{msg.senderName}</span>
+                  <button
+                    onClick={() => !isMe && !currentRoom && sendInvitation(msg.senderId, msg.senderName)}
+                    className={`text-[10px] font-bold tracking-wide ${isMe ? 'text-indigo-300' : 'text-slate-400 hover:text-indigo-400 cursor-pointer hover:underline'}`}
+                    title={!isMe && !currentRoom ? "Click to Pair" : ""}
+                  >
+                    {msg.senderName}
+                  </button>
                 </div>
               )}
               <div
-                className={`max-w-[85%] md:max-w-[65%] px-5 py-3.5 rounded-[1.2rem] text-sm leading-relaxed relative transition-all duration-300 
-                  ${isMe
-                    ? `bg-gradient-to-br from-indigo-600/90 to-violet-700/90 text-white rounded-tr-sm shadow-[0_4px_15px_rgba(79,70,229,0.3)]`
-                    : 'bg-white/5 backdrop-blur-md border border-white/5 text-slate-200 rounded-tl-sm hover:bg-white/10 shadow-lg'
-                  }
-                `}
+                className={`group relative max-w-[80%] break-words p-4 rounded-2xl shadow-lg transition-all duration-300 hover:scale-[1.02] active:scale-95 cursor-pointer 
+                    ${msg.senderId === user.uid
+                    ? `bg-gradient-to-br ${msg.senderColor || 'from-indigo-600 to-blue-600'} text-white rounded-br-none`
+                    : 'bg-slate-800/80 text-slate-200 rounded-bl-none border border-slate-700/50 hover:bg-slate-800'
+                  } ${poltergeistMode ? 'opacity-80' : ''}`}
+                onClick={() => checkTriggers(msg.text)}
               >
                 {/* Reply Context in Message */}
                 {msg.replyTo && (
@@ -684,6 +1406,90 @@ export default function GhostChat() {
                     </div>
                   </div>
                 )}
+
+                {/* Poll Rendering Logic for Oracle */}
+                {/* Poll Rendering Logic for Oracle */}
+                {msg.poll && (
+                  <div className="mt-3 p-3 bg-red-900/40 rounded-lg border border-red-500/30">
+                    <div className="flex items-center gap-2 mb-2 text-red-300 font-bold text-xs uppercase tracking-widest">
+                      <AlertCircle size={14} /> Tribunal Initiated
+                    </div>
+                    <p className="text-sm font-bold text-white mb-2">
+                      Vote to banish {msg.poll.target}?
+                    </p>
+
+                    {/* Timer */}
+                    <div className="mb-2 w-full bg-red-900/30 h-1 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-red-500 transition-all duration-1000 ease-linear"
+                        style={{ width: `${Math.max(0, Math.min(100, ((msg.poll.deadline - Date.now()) / 15000) * 100))}%` }}
+                      />
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (localStorage.getItem(`voted_${msg.id}`)) {
+                            showNotification("One citizen, one vote.");
+                            return;
+                          }
+                          localStorage.setItem(`voted_${msg.id}`, 'true');
+                          const msgRef = ref(db, `artifacts/${sanitizedAppId}/public/data/ghost_messages/${msg.id}/poll/yes`);
+                          await runTransaction(msgRef, (current) => (current || 0) + 1);
+                        }}
+                        className={`flex-1 bg-red-600 hover:bg-red-500 text-white py-1 rounded text-xs font-bold transition-colors flex justify-between px-3 cursor-pointer ${localStorage.getItem(`voted_${msg.id}`) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        <span>BANISH</span>
+                        <span>{msg.poll.yes || 0}</span>
+                      </button>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (localStorage.getItem(`voted_${msg.id}`)) {
+                            showNotification("One citizen, one vote.");
+                            return;
+                          }
+                          localStorage.setItem(`voted_${msg.id}`, 'true');
+                          const msgRef = ref(db, `artifacts/${sanitizedAppId}/public/data/ghost_messages/${msg.id}/poll/no`);
+                          await runTransaction(msgRef, (current) => (current || 0) + 1);
+                        }}
+                        className={`flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 py-1 rounded text-xs font-bold transition-colors flex justify-between px-3 cursor-pointer ${localStorage.getItem(`voted_${msg.id}`) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        <span>MERCY</span>
+                        <span>{msg.poll.no || 0}</span>
+                      </button>
+                    </div>
+
+                    {/* Resolution Check (Client Side Trigger) */}
+                    {msg.poll.deadline < Date.now() && (
+                      <div className="mt-2 text-xs text-center font-mono text-red-400">
+                        {msg.poll.yes > msg.poll.no
+                          ? "VERDICT: GUILTY. EXECUTING PROTOCOL..."
+                          : "VERDICT: INNOCENT. THE VOID RECEDES."}
+                        {/* Actual Effect Trigger */}
+                        {(() => {
+                          if (msg.poll.yes > msg.poll.no && msg.poll.target.toLowerCase() === profile.name.toLowerCase()) {
+                            // Check if we are freshly expired (within 55s) to avoid re-kicking old polls on reload
+                            if (Date.now() - msg.poll.deadline < 55000) {
+                              // Set a flag to avoid repeated reloads in same session
+                              if (!sessionStorage.getItem(`banned_${msg.id}`)) {
+                                sessionStorage.setItem(`banned_${msg.id}`, 'true');
+                                setTimeout(() => {
+                                  localStorage.removeItem('ghost_profile'); // Reset Identity
+                                  window.location.reload(); // Hard Kick
+                                }, 3000);
+                              }
+                            }
+                          }
+                          return null;
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {/* End Poll Logic */}
+                {/* End Poll Logic */}
 
                 {msg.startImage && (
                   <img
@@ -760,13 +1566,36 @@ export default function GhostChat() {
             {isUploading ? <RefreshCw size={18} className="animate-spin" /> : <ImageIcon size={18} />}
           </button>
 
+          {/* Typing Indicator */}
+          {typingUsers.length > 0 && (
+            <div className="absolute -top-6 left-4 flex items-center gap-2 text-[10px] font-bold text-slate-400 animate-slide-up">
+              <div className="flex gap-0.5">
+                <span className="w-1 h-1 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></span>
+                <span className="w-1 h-1 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></span>
+                <span className="w-1 h-1 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
+              </div>
+              <span>
+                {(() => {
+                  // Filter out self for text display
+                  const others = typingUsers.filter(u => u.id !== user?.uid);
+                  if (others.length === 0) return null; // Only me typing
+                  if (others.length === 1) return `${others[0].name} is manifesting...`;
+                  if (others.length === 2) return `${others[0].name} & ${others[1].name} are manifesting...`;
+                  return "Multiple spirits manifesting...";
+                })()}
+              </span>
+            </div>
+          )}
 
           {/* Text Area */}
           <div className="flex-1 relative">
             <textarea
               ref={inputRef}
               value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
+              onChange={(e) => {
+                setInputText(e.target.value);
+                if (e.target.value.length > 0) updateTyping(true);
+              }}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
               placeholder="Broadcast a message..."
               className={`w-full bg-transparent text-white text-base px-4 py-3.5 focus:outline-none resize-none min-h-[50px] max-h-[120px] scrollbar-hide rounded-xl transition-colors placeholder:text-slate-600`}
@@ -785,7 +1614,7 @@ export default function GhostChat() {
           </button>
         </div>
       </footer>
-    </div>
+    </div >
   );
 }
 
