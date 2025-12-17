@@ -468,9 +468,14 @@ export default function GhostChat() {
     const cleanupInterval = setInterval(() => {
       const now = Date.now();
       messages.forEach(msg => {
-        if (msg.senderId === user.uid && msg.isPoltergeist) {
+        if (msg.senderId === user.uid) {
           const timeSince = now - (msg.timestamp || now);
-          if (timeSince > 45000) { // 45s cleanup
+
+          // Epheramal rules
+          const isEphemeral = msg.isPoltergeist || msg.startImage;
+          const limit = isEphemeral ? 45000 : 3600000; // 45s for images/ghost mode, 1hr for text
+
+          if (timeSince > limit) {
             remove(ref(db, `artifacts/${sanitizedAppId}/public/data/ghost_messages/${msg.id}`))
               .catch(err => console.error("Cleanup failed", err));
           }
