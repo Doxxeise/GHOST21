@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Send, User, Ghost, LogOut, Sparkles, AlertCircle, RefreshCw, Reply, X, EyeOff
+  Send, User, Ghost, LogOut, Sparkles, AlertCircle, RefreshCw, Reply, X, EyeOff, Image as ImageIcon
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
@@ -51,7 +51,46 @@ interface Message {
     text: string;
   };
   isPoltergeist?: boolean;
+  startImage?: string;
 }
+
+const compressImage = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800;
+        const MAX_HEIGHT = 800;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.6));
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
 
 // ==========================================
 // === ANIMATED EMOJI LIBRARY (START) ===
@@ -270,6 +309,8 @@ export default function GhostChat() {
   const [notification, setNotification] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const { enabled: poltergeistMode, toggleMode: togglePoltergeist } = usePoltergeistMode();
 
   // Initialize Emoji Library
@@ -361,9 +402,27 @@ export default function GhostChat() {
     setProfile({ name: '', color: '', id: '' });
   };
 
-  const postMessage = async (text: string) => {
-    if (!text.trim() || !user) return;
+  const postMessage = async (text: string, imageFile?: File) => {
+    if ((!text.trim() && !imageFile) || !user) return;
+
+    // Prevent double submissions
+    if (isUploading) return;
+
     try {
+      let imageBase64 = undefined;
+      if (imageFile) {
+        setIsUploading(true);
+        try {
+          imageBase64 = await compressImage(imageFile);
+        } catch (e) {
+          console.error("Compression failed", e);
+          showNotification("Image processing failed.");
+          setIsUploading(false);
+          return;
+        }
+        setIsUploading(false);
+      }
+
       const messagesListRef = ref(db, `artifacts/${sanitizedAppId}/public/data/ghost_messages`);
       const payload: any = {
         text: text,
@@ -371,7 +430,8 @@ export default function GhostChat() {
         senderName: profile.name,
         senderColor: profile.color,
         isPoltergeist: poltergeistMode,
-        timestamp: serverTimestamp()
+        timestamp: serverTimestamp(),
+        startImage: imageBase64
       };
 
       if (replyingTo) {
@@ -386,6 +446,7 @@ export default function GhostChat() {
       setReplyingTo(null);
       scrollToBottom();
     } catch (err) {
+      setIsUploading(false);
       showNotification("Failed to broadcast.");
     }
   };
@@ -409,7 +470,7 @@ export default function GhostChat() {
       messages.forEach(msg => {
         if (msg.senderId === user.uid && msg.isPoltergeist) {
           const timeSince = now - (msg.timestamp || now);
-          if (timeSince > 30500) { // Slight buffer over 30s to allow fade animation to finish on clients
+          if (timeSince > 45000) { // 45s cleanup
             remove(ref(db, `artifacts/${sanitizedAppId}/public/data/ghost_messages/${msg.id}`))
               .catch(err => console.error("Cleanup failed", err));
           }
@@ -535,9 +596,9 @@ export default function GhostChat() {
           const showHeader = idx === 0 || messages[idx - 1].senderId !== msg.senderId;
 
           const timeSince = Date.now() - (msg.timestamp || Date.now());
-          const fadeDuration = 5000; // 5 seconds
-          const lifeTime = 30000; // 30 seconds total life
-          const fadeStart = lifeTime - fadeDuration; // 29 seconds
+          const fadeDuration = 5000;
+          const lifeTime = 45000; // 45 seconds total life
+          const fadeStart = lifeTime - fadeDuration; // 40 seconds
 
           const shouldFade = msg.isPoltergeist && timeSince < lifeTime;
           const isGone = msg.isPoltergeist && timeSince >= lifeTime;
@@ -577,6 +638,13 @@ export default function GhostChat() {
                   </div>
                 )}
 
+                {msg.startImage && (
+                  <img
+                    src={msg.startImage}
+                    alt="Encrypted Visual"
+                    className="max-w-full rounded-lg mb-3 border border-white/10 shadow-lg block"
+                  />
+                )}
                 {msg.text}
 
                 {/* Reply Button */}
@@ -637,10 +705,33 @@ export default function GhostChat() {
           <button
             type="submit"
             onClick={sendMessage}
-            disabled={!inputText.trim()}
+            disabled={!inputText.trim() || isUploading}
             className={`p-3.5 mb-1 rounded-[1rem] shadow-lg transition-all transform active:scale-95 disabled:opacity-50 disabled:scale-100 bg-white text-black hover:bg-slate-200`}
           >
             <Send size={18} className="ml-0.5" strokeWidth={2.5} />
+          </button>
+
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files?.[0]) {
+                const file = e.target.files[0];
+                postMessage("", file);
+                e.target.value = ''; // Reset
+              }
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            className="p-3.5 mb-1 rounded-[1rem] transition-all transform active:scale-95 text-slate-400 hover:text-white hover:bg-white/10 disabled:opacity-50"
+            title="Send Image"
+          >
+            {isUploading ? <RefreshCw size={18} className="animate-spin" /> : <ImageIcon size={18} />}
           </button>
         </div>
       </footer>
