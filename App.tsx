@@ -313,18 +313,26 @@ export default function GhostChat() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
+  const [serverTimeOffset, setServerTimeOffset] = useState(0);
   const { enabled: poltergeistMode, toggleMode: togglePoltergeist } = usePoltergeistMode();
 
   // Initialize Emoji Library
   const { floatingEmojis, triggerReaction } = useEmojiLibrary(user);
 
-  // Connection Status Listener
+  // Connection Status & Clock Skew Listener
   useEffect(() => {
     const connectedRef = ref(db, ".info/connected");
-    const unsubscribe = onValue(connectedRef, (snap) => {
+    const offsetRef = ref(db, ".info/serverTimeOffset");
+
+    const unsubConnected = onValue(connectedRef, (snap) => {
       setIsConnected(!!snap.val());
     });
-    return () => unsubscribe();
+
+    const unsubOffset = onValue(offsetRef, (snap) => {
+      setServerTimeOffset(snap.val() || 0);
+    });
+
+    return () => { unsubConnected(); unsubOffset(); };
   }, []);
 
   // Auth Initialization
@@ -430,7 +438,7 @@ export default function GhostChat() {
 
     setIsUploading(true);
     try {
-      let imageBase64 = undefined;
+      let imageBase64: string | null = null;
       // Compression
       if (imageFile) {
         try {
@@ -451,7 +459,7 @@ export default function GhostChat() {
         senderColor: profile.color,
         isPoltergeist: poltergeistMode,
         timestamp: serverTimestamp(),
-        startImage: imageBase64
+        startImage: imageBase64 || null
       };
 
       if (replyingTo) {
@@ -459,16 +467,16 @@ export default function GhostChat() {
           id: replyingTo.id,
           senderName: replyingTo.senderName,
           text: replyingTo.text,
-          startImage: replyingTo.startImage
+          startImage: replyingTo.startImage || null
         };
       }
 
       await push(messagesListRef, payload);
       setReplyingTo(null);
       scrollToBottom();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Broadcast failed", err);
-      showNotification("Failed to broadcast.");
+      showNotification(`Failed to broadcast: ${err.message}`);
     } finally {
       setIsUploading(false);
     }
@@ -489,10 +497,10 @@ export default function GhostChat() {
   useEffect(() => {
     if (!user) return;
     const cleanupInterval = setInterval(() => {
-      const now = Date.now();
+      const estimatedServerTime = Date.now() + serverTimeOffset;
       messages.forEach(msg => {
         if (msg.senderId === user.uid) {
-          const timeSince = now - (msg.timestamp || now);
+          const timeSince = estimatedServerTime - (msg.timestamp || estimatedServerTime);
 
           // Epheramal rules
           const isEphemeral = msg.isPoltergeist || msg.startImage;
