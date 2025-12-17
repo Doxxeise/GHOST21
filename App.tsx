@@ -312,10 +312,20 @@ export default function GhostChat() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isConnected, setIsConnected] = useState(true);
   const { enabled: poltergeistMode, toggleMode: togglePoltergeist } = usePoltergeistMode();
 
   // Initialize Emoji Library
   const { floatingEmojis, triggerReaction } = useEmojiLibrary(user);
+
+  // Connection Status Listener
+  useEffect(() => {
+    const connectedRef = ref(db, ".info/connected");
+    const unsubscribe = onValue(connectedRef, (snap) => {
+      setIsConnected(!!snap.val());
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Auth Initialization
   useEffect(() => {
@@ -416,14 +426,13 @@ export default function GhostChat() {
 
   const postMessage = async (text: string, imageFile?: File) => {
     if ((!text.trim() && !imageFile) || !user) return;
-
-    // Prevent double submissions
     if (isUploading) return;
 
+    setIsUploading(true);
     try {
       let imageBase64 = undefined;
+      // Compression
       if (imageFile) {
-        setIsUploading(true);
         try {
           imageBase64 = await compressImage(imageFile);
         } catch (e) {
@@ -432,7 +441,6 @@ export default function GhostChat() {
           setIsUploading(false);
           return;
         }
-        setIsUploading(false);
       }
 
       const messagesListRef = ref(db, `artifacts/${sanitizedAppId}/public/data/ghost_messages`);
@@ -459,8 +467,10 @@ export default function GhostChat() {
       setReplyingTo(null);
       scrollToBottom();
     } catch (err) {
-      setIsUploading(false);
+      console.error("Broadcast failed", err);
       showNotification("Failed to broadcast.");
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -568,8 +578,8 @@ export default function GhostChat() {
           <div>
             <h1 className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 tracking-tight leading-none glitch-hover transition-all cursor-pointer">GhostChat</h1>
             <div className="flex items-center gap-1.5 mt-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981] animate-status"></span>
-              <span className="text-[9px] font-semibold text-slate-500 uppercase tracking-widest">Live Channel</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : 'bg-red-500 shadow-[0_0_8px_#ef4444]'} animate-status`}></span>
+              <span className="text-[9px] font-semibold text-slate-500 uppercase tracking-widest">{isConnected ? 'Live Channel' : 'Offline'}</span>
             </div>
           </div>
         </div>
