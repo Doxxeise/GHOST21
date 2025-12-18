@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Send, User, Ghost, LogOut, Sparkles, AlertCircle, RefreshCw, Reply, X, EyeOff, Image as ImageIcon, Trash2, ShieldAlert
+  Send, User, Ghost, LogOut, Sparkles, AlertCircle, RefreshCw, Reply, X, EyeOff, Image as ImageIcon, Trash2, ShieldAlert, HelpCircle
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
@@ -65,7 +65,7 @@ interface Message {
   };
   reactions?: Record<string, Record<string, boolean>>; // emoji -> { userId: true }
   game?: {
-    type: 'DICE' | 'COIN';
+    type: 'DICE' | 'COIN' | 'TOD';
     result: string;
   };
 }
@@ -208,6 +208,22 @@ const usePoltergeistMode = () => {
   const [enabled, setEnabled] = useState(false);
   const toggleMode = () => setEnabled(prev => !prev);
   return { enabled, toggleMode };
+};
+
+const renderMessageText = (text: string) => {
+  if (!text) return "";
+  // Split by @followed by non-whitespace/punctuation
+  const parts = text.split(/(@[^\s\.,!?;:()\[\]{}'"]+)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('@')) {
+      return (
+        <span key={i} className="px-1.5 py-0.5 rounded-md bg-white/20 text-white font-black border border-white/20 animate-pulse-subtle shadow-[0_0_10px_rgba(255,255,255,0.2)] mx-0.5 italic">
+          {part}
+        </span>
+      );
+    }
+    return part;
+  });
 };
 
 /**
@@ -368,6 +384,12 @@ const useKeywordTriggers = (inputText: string) => {
       setEffect('wiggle'); setTimeout(() => setEffect(null), 1000);
     } else if (text.includes('fly')) {
       setEffect('ascend'); setTimeout(() => setEffect(null), 3000);
+    } else if (text.includes('christmas')) {
+      setEffect('christmas'); setTimeout(() => setEffect(null), 10000);
+    } else if (text.includes('incourse')) {
+      setEffect('incourse'); setTimeout(() => setEffect(null), 5000);
+    } else if (text.includes('pharmacy')) {
+      setEffect('pharmacy'); setTimeout(() => setEffect(null), 3000);
     }
   };
 
@@ -429,6 +451,53 @@ const MatrixRain = () => {
   }, []);
   return <canvas ref={canvasRef} className="absolute inset-0 z-[5] pointer-events-none opacity-50 mix-blend-screen" />;
 };
+
+const SnowFall = () => (
+  <div className="absolute inset-0 overflow-hidden pointer-events-none z-[50]">
+    {[...Array(30)].map((_, i) => (
+      <div key={i} className="absolute text-white/80 animate-snow"
+        style={{
+          left: `${Math.random() * 100}%`,
+          top: '-5%',
+          fontSize: `${Math.random() * 10 + 10}px`,
+          animationDelay: `${Math.random() * 5}s`,
+          animationDuration: `${Math.random() * 5 + 5}s`
+        }}>
+        {Math.random() > 0.5 ? '❄' : '❅'}
+      </div>
+    ))}
+  </div>
+);
+
+const StressEffects = () => (
+  <div className="absolute inset-0 overflow-hidden pointer-events-none z-[50]">
+    {[...Array(15)].map((_, i) => (
+      <div key={i} className="absolute text-orange-500/60 font-mono font-bold animate-stress text-[1.5rem]"
+        style={{
+          left: `${Math.random() * 100}%`,
+          top: `${Math.random() * 100}%`,
+          animationDelay: `${Math.random() * 2}s`
+        }}>
+        {['📚', '⚡', '404', 'FAIL', 'DEADLINE', 'STRESS'][Math.floor(Math.random() * 6)]}
+      </div>
+    ))}
+  </div>
+);
+
+const PharmacyGlitch = () => (
+  <div className="absolute inset-0 z-[1000] pointer-events-none flex items-center justify-center overflow-hidden">
+    <div className="absolute inset-0 bg-red-900/40 mix-blend-color-burn animate-glitch-ui" />
+    <div className="flex flex-col items-center">
+      <ShieldAlert size={120} className="text-red-600 animate-pulse mb-4" />
+      <h2 className="text-6xl font-black text-red-600 tracking-tighter uppercase italic drop-shadow-[0_0_20px_rgba(220,38,38,1)] animate-shake">
+        SYSTEM HATE
+      </h2>
+      <div className="mt-4 text-[10px] font-mono text-red-400 bg-black/80 px-4 py-1 border border-red-500/50">
+        PHARMACY FREQUENCY DETECTED // CORRUPTION 99%
+      </div>
+    </div>
+  </div>
+);
 
 
 
@@ -498,6 +567,92 @@ const SpiritDust = ({ intensity = 0 }: { intensity?: number }) => {
   return <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none z-0 mix-blend-screen" />;
 };
 
+// --- HELP MODAL ---
+const HelpModal = ({ onClose }: { onClose: () => void }) => {
+  const features = [
+    {
+      title: "🔮 The Oracle & Games",
+      desc: "An AI spirit that moderates your void. It can answer questions, create polls, and run games like 'Truth or Dare' by tagging players.",
+      commands: ["@oracle What is the meaning of life?", "@oracle flip a coin", "@oracle roll a dice", "@oracle play Truth or Dare"],
+      icon: <Sparkles size={16} />
+    },
+    {
+      title: "👻 Poltergeist Mode",
+      desc: "Messages that fade away and disappear into the void after 45 seconds. Perfect for secrets.",
+      icon: <Ghost size={16} />
+    },
+    {
+      title: "🧬 Neural Links (Private Chat)",
+      desc: "Click a user's name to invite them to a private, encrypted neural link. Everything is ephemeral.",
+      icon: <User size={16} />
+    },
+    {
+      title: "🖼️ Glitched Visuals",
+      desc: "Upload images to apply a digital glitch effect. Large images are automatically compressed for speed.",
+      icon: <ImageIcon size={16} />
+    },
+    {
+      title: "✨ Secret Keywords",
+      desc: "Some words trigger environmental effects. Try typing things like 'matrix', 'heart', 'party', 'christmas', 'incourse', or 'pharmacy' (bad vibe).",
+      icon: <Sparkles size={16} />
+    }
+  ];
+
+  return (
+    <div className="absolute inset-0 z-[300] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-6 animate-enter">
+      <div className="bg-slate-900 border border-indigo-500/30 p-8 rounded-3xl max-w-2xl w-full shadow-[0_0_50px_rgba(79,70,229,0.2)] max-h-[85vh] overflow-y-auto scrollbar-thin scrollbar-thumb-indigo-500/20">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-3 text-indigo-400">
+            <HelpCircle size={32} />
+            <h2 className="text-2xl font-bold tracking-widest uppercase">System Manual</h2>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full text-slate-500 hover:text-white transition-colors">
+            <X size={24} />
+          </button>
+        </div>
+
+        <div className="space-y-6">
+          {features.map((f, i) => (
+            <div key={i} className="group p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-indigo-500/20 transition-all">
+              <div className="flex items-center gap-3 mb-2 text-indigo-300">
+                {f.icon}
+                <h3 className="font-bold tracking-wide">{f.title}</h3>
+              </div>
+              <p className="text-sm text-slate-400 leading-relaxed mb-3">{f.desc}</p>
+              {f.commands && (
+                <div className="flex flex-wrap gap-2">
+                  {f.commands.map((c, j) => (
+                    <code key={j} className="text-[10px] bg-black/40 px-2 py-1 rounded-md text-slate-500 border border-white/5 font-mono">
+                      {c}
+                    </code>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+
+          <div className="mt-8 p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/20">
+            <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-widest mb-2">How to Use</h3>
+            <ul className="text-xs text-slate-400 space-y-2 list-disc pl-4">
+              <li>Login with a ghost name and color.</li>
+              <li>Type in the public void to broadcast to all ghosts.</li>
+              <li>Toggle the <Ghost className="inline mx-1" size={12} /> icon to enter Poltergeist Mode.</li>
+              <li>Interact with The Oracle by mentioning it or replying to it.</li>
+            </ul>
+          </div>
+        </div>
+
+        <button
+          onClick={onClose}
+          className="w-full mt-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold uppercase tracking-widest transition-all shadow-lg shadow-indigo-500/20"
+        >
+          Return to Void
+        </button>
+      </div>
+    </div>
+  );
+};
+
 export default function GhostChat() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -508,6 +663,8 @@ export default function GhostChat() {
   const [inputText, setInputText] = useState('');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
+  (window as any).setShowHelp = setShowHelp;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -549,6 +706,16 @@ export default function GhostChat() {
   const { playPing, playWarp, playSecret } = useSoundEffects();
   const isMatrix = useKonamiCode();
   const { effect: keywordEffect, checkTriggers } = useKeywordTriggers(inputText);
+
+  // Native Emoji Feedback Integration
+  useEffect(() => {
+    const lastChar = inputText[inputText.length - 1];
+    // Check for high-frequency emojis
+    if (["❤️", "🔥", "💀", "✨", " Omo"].includes(lastChar) || inputText.includes(" Omo")) {
+      setActivityLevel(prev => Math.min(prev + 0.2, 1));
+      setTimeout(() => setActivityLevel(prev => Math.max(prev - 0.2, 0)), 2000);
+    }
+  }, [inputText]);
 
   // Typing Presence
   const { typingUsers, updateTyping } = useTypingPresence(profile.id ? profile : null, currentRoom?.id || null);
@@ -894,9 +1061,13 @@ export default function GhostChat() {
       });
 
       setTimeout(async () => {
+        // Get active participants for context
+        const activeParticipants = [...new Set(messages.slice(-20).map(m => m.senderName))].filter(n => n !== "🔮 The Oracle");
+        const participantsList = activeParticipants.join(", ");
+
         const contextPrompt = isOracleReply
-          ? `(User is replying to your previous message: "${replyingTo.text}")\nUser says: ${msgText}`
-          : msgText;
+          ? `(Available Users: ${participantsList})\n(User is replying to your previous message: "${replyingTo.text}")\nUser says: ${msgText}`
+          : `(Available Users: ${participantsList})\nUser says: ${msgText}`;
 
         console.log("🔮 Asking Oracle...");
         const oracleResponse = await askOracle(contextPrompt);
@@ -952,17 +1123,19 @@ export default function GhostChat() {
           }
         }
 
-        // Parse GAME: [GAME: DICE] or [GAME: COIN]
+        // Parse GAME: [GAME: DICE] or [GAME: COIN] or [GAME: TOD]
         if (oracleResponse.includes('[GAME:')) {
-          const gameMatch = oracleResponse.match(/\[GAME:\s*(DICE|COIN)\]/i);
+          const gameMatch = oracleResponse.match(/\[GAME:\s*(DICE|COIN|TOD)\]/i);
           if (gameMatch) {
-            const type = gameMatch[1].toUpperCase() as 'DICE' | 'COIN';
+            const type = gameMatch[1].toUpperCase() as 'DICE' | 'COIN' | 'TOD';
             finalText = finalText.replace(gameMatch[0], '').trim();
             let result = "";
             if (type === 'DICE') {
               result = (Math.floor(Math.random() * 6) + 1).toString();
-            } else {
+            } else if (type === 'COIN') {
               result = Math.random() > 0.5 ? 'HEADS' : 'TAILS';
+            } else {
+              result = "TRUTH OR DARE"; // Oracle moderates the actual content
             }
             gameData = { type, result };
           }
@@ -1161,11 +1334,14 @@ export default function GhostChat() {
   }
 
   return (
-    <div className={`flex flex-col h-screen w-full bg-[#050505] text-slate-200 font-sans overflow-hidden relative selection:bg-purple-500/30 ${isTunneling ? 'animate-tunnel' : ''} ${containerClasses}`}>
+    <div className={`flex flex-col h-screen w-full bg-[#050505] text-slate-200 font-sans overflow-hidden relative selection:bg-purple-500/30 ${isTunneling ? 'animate-tunnel' : ''} ${keywordEffect === 'pharmacy' ? 'animate-glitch-ui' : ''}`}>
 
       {/* Secret Overlays */}
       {isMatrix && <MatrixRain />}
       {keywordEffect === 'heartbeat' && <FloatingHearts />}
+      {keywordEffect === 'christmas' && <SnowFall />}
+      {keywordEffect === 'incourse' && <StressEffects />}
+      {keywordEffect === 'pharmacy' && <PharmacyGlitch />}
       {keywordEffect === 'party' && (
         <div className="absolute inset-0 pointer-events-none z-[60] overflow-hidden">
           {/* Simple CSS Confetti could go here, for now simpler shim */}
@@ -1254,6 +1430,15 @@ export default function GhostChat() {
             75% { transform: translateY(15px); } 
         }
         .animate-wiggle { animation: wiggle 0.5s ease-in-out infinite; }
+
+        @keyframes snow { 0% { transform: translate(0, 0) rotate(0); } 100% { transform: translate(20px, 110vh) rotate(360deg); } }
+        .animate-snow { animation: snow 10s linear infinite; }
+
+        @keyframes stress { 0% { transform: translate(0, 0) scale(1); opacity: 0; } 50% { opacity: 1; } 100% { transform: translate(var(--tw-translate-x), var(--tw-translate-y)) scale(1.5); opacity: 0; } }
+        .animate-stress { animation: stress 2s ease-out infinite; }
+
+        @keyframes pulse-subtle { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.05); opacity: 0.8; } }
+        .animate-pulse-subtle { animation: pulse-subtle 2s ease-in-out infinite; }
       `}</style>
 
 
@@ -1364,6 +1549,14 @@ export default function GhostChat() {
             </button>
           )}
 
+          <button
+            onClick={() => setShowHelp(true)}
+            className="p-2.5 text-indigo-400 hover:bg-indigo-500/10 rounded-xl transition-all duration-300 hover:scale-110 active:scale-90"
+            title="Help & Info"
+          >
+            <HelpCircle size={18} />
+          </button>
+
           {/* Admin Toggle */}
           {profile.name === 'thecolorfulbox' && (
             <button
@@ -1384,6 +1577,9 @@ export default function GhostChat() {
           </button>
         </div>
       </header>
+
+      {/* Help Modal */}
+      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
 
       {/* Admin Modal */}
       {showAdmin && (
@@ -1561,13 +1757,13 @@ export default function GhostChat() {
 
                 {/* Game Rendering Logic */}
                 {msg.game && (
-                  <div className="mt-2 p-3 bg-white/5 rounded-lg border border-white/10 flex items-center justify-between">
+                  <div className={`mt-2 p-3 ${msg.game.type === 'TOD' ? 'bg-purple-900/30 border-purple-500/30' : 'bg-white/5 border-white/10'} rounded-lg border flex items-center justify-between`}>
                     <div className="flex items-center gap-2">
-                      <Sparkles size={16} className="text-amber-400" />
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{msg.game.type} ROLL</span>
+                      <Sparkles size={16} className={msg.game.type === 'TOD' ? 'text-purple-400' : 'text-amber-400'} />
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{msg.game.type === 'TOD' ? 'TRUTH OR DARE' : `${msg.game.type} ROLL`}</span>
                     </div>
                     <div className="text-xl font-bold text-white animate-bounce">
-                      {msg.game.type === 'DICE' ? `🎲 ${msg.game.result}` : `🪙 ${msg.game.result}`}
+                      {msg.game.type === 'DICE' ? `🎲 ${msg.game.result}` : msg.game.type === 'COIN' ? `🪙 ${msg.game.result}` : `😈 ?`}
                     </div>
                   </div>
                 )}
@@ -1579,7 +1775,7 @@ export default function GhostChat() {
                     className="max-w-full rounded-lg mb-3 border border-white/10 shadow-lg block"
                   />
                 )}
-                {msg.text}
+                {renderMessageText(msg.text)}
 
                 {/* Reactions Display */}
                 {msg.reactions && (
@@ -1803,16 +1999,25 @@ function LoginScreen({ onJoin, isAuthReady, authError, onRetry }: { onJoin: (nam
             </div>
           </div>
 
-          <button
-            onClick={() => onJoin(name, selectedColor)}
-            disabled={!isAuthReady}
-            className={`w-full py-4 rounded-2xl font-bold text-lg shadow-xl shadow-indigo-900/20 transition-all transform 
-              ${isAuthReady
-                ? 'bg-white text-black hover:bg-slate-100 hover:scale-[1.02] active:scale-[0.98]'
-                : 'bg-white/10 text-slate-500 cursor-not-allowed'}`}
-          >
-            {isAuthReady ? "Connect to Channel" : "Initializing..."}
-          </button>
+          <div className="pt-4 border-t border-white/5 space-y-4">
+            <button
+              onClick={() => (window as any).setShowHelp?.(true)}
+              className="w-full py-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 font-bold text-xs uppercase tracking-widest transition-all"
+            >
+              How to Use GhostChat
+            </button>
+
+            <button
+              onClick={() => onJoin(name, selectedColor)}
+              disabled={!isAuthReady}
+              className={`w-full py-4 rounded-2xl font-bold text-lg shadow-xl shadow-indigo-900/20 transition-all transform 
+                ${isAuthReady
+                  ? 'bg-white text-black hover:bg-slate-100 hover:scale-[1.02] active:scale-[0.98]'
+                  : 'bg-white/10 text-slate-500 cursor-not-allowed'}`}
+            >
+              {isAuthReady ? "Connect to Channel" : "Initializing..."}
+            </button>
+          </div>
         </div>
 
         <div className="mt-8 text-center"><p className="text-[10px] text-slate-600 font-bold uppercase tracking-widest hover:text-slate-400 transition-colors cursor-default">End-to-End Encrypted</p></div>

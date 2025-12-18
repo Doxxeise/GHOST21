@@ -1,43 +1,44 @@
-```typescript
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Helper to get API Key safely across different environments (Vite/Node)
-const getApiKey = () => {
-    // 1. Try process.env (mapped via vite define)
-    const pEnv = (typeof process !== 'undefined') ? process.env.GEMINI_API_KEY : undefined;
-    if (pEnv && pEnv !== 'undefined' && pEnv !== 'null') return pEnv;
+const API_KEYS = [
+    "AIzaSyDWN1Vi3RWw6fJB1kQsVFmFd7O7nsDltXY", // New Primary (provided by user)
+    "AIzaSyD4_pW3UMo0QEk9rgTW1GG8Bgq_H4iVKrk", // Fallback (previous)
+    "AIzaSyABZ0cV_uVNRUyEBb6d8XiAyepEritY7Uk"  // Alternative (test key)
+];
 
-    // 2. Try import.meta.env (Vite standard)
-    // @ts-ignore
-    const iEnv = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env.GEMINI_API_KEY : undefined;
-    if (iEnv && iEnv !== 'undefined' && iEnv !== 'null') return iEnv;
+let currentKeyIndex = 0;
 
-    // 3. Last resort fallback (Leaked/Barred Key)
-    return "AIzaSyD4_pW3UMo0QEk9rgTW1GG8Bgq_H4iVKrk";
+const getNextGenAI = () => {
+    const key = API_KEYS[currentKeyIndex];
+    currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
+    return { genAI: new GoogleGenerativeAI(key), key };
 };
 
-const API_KEY = getApiKey();
-const genAI = new GoogleGenerativeAI(API_KEY);
-
-// Stable models first to avoid timeouts
+// Stable models first to avoid timeouts (Updated for Dec 2025)
 const MODELS_TO_TRY = [
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-8b",
-    "gemini-1.5-pro",
-    "gemini-2.0-flash-exp"
+    "gemini-3-flash-preview",
+    "gemini-3-pro-preview",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-1.5-flash"
 ];
 
 export const askOracle = async (prompt: string): Promise<string> => {
-    console.log(`🔮 Oracle awakening... (Key starts with: ${ API_KEY?.substring(0, 8) }...)`);
     let errorReport = "";
 
-    // FALLBACK STRATEGY
-    for (const modelName of MODELS_TO_TRY) {
-        try {
-            console.log(`🔮 Oracle attempting connection via: ${ modelName } `);
-            const model = genAI.getGenerativeModel({ model: modelName });
+    // TRY EACH KEY
+    for (let k = 0; k < API_KEYS.length; k++) {
+        const { genAI, key } = getNextGenAI();
+        const keyPrefix = key.substring(0, 8);
+        console.log(`🔮 Oracle rotating key... (Starts with: ${keyPrefix}...)`);
 
-            const ghostPrompt = `
+        // FALLBACK STRATEGY PER KEY
+        for (const modelName of MODELS_TO_TRY) {
+            try {
+                console.log(`🔮 Oracle attempting ${modelName} with key ${keyPrefix}...`);
+                const model = genAI.getGenerativeModel({ model: modelName });
+
+                const ghostPrompt = `
               You are "The Oracle", a chill and observant digital spirit with the vibe of a Nigerian University student.
 
     RULES:
@@ -49,47 +50,34 @@ export const askOracle = async (prompt: string): Promise<string> => {
               SPECIAL ABILITIES:
 - If someone is genuinely disrupting the peace, you can vote to kick them.
               - Token: [VOTE_KICK: <name>]
-    - Usage: "Omo, @Dave is kinda doing too much for this group. [VOTE_KICK: Dave]"
+              - Usage: "Omo, @Dave is kinda doing too much for this group. [VOTE_KICK: Dave]"
 
-        - Create a poll for the group:
-            - Token: [POLL: "Question", "Option 1", "Option 2", ...]
-                - Usage: "Since nobody can agree, let's decide once and for all. [POLL: "Best joint for suya ? ", "University Road", "Ikorodu side", "Ebute Metta"]"
+              - Create a poll for the group:
+              - Token: [POLL: "Question", "Option 1", "Option 2", ...]
+              - Usage: "Since nobody can agree, let's decide once and for all. [POLL: "Best joint for suya?", "University Road", "Ikorodu side", "Ebute Metta"]"
 
-                    - Trigger a simple game:
-- Token: [GAME: DICE] or[GAME: COIN]
-- Usage: "Let the gods decide your fate. [GAME: DICE]"
+              - Trigger a simple game:
+              - Token: [GAME: DICE], [GAME: COIN], or [GAME: TOD]
+              - Usage: "Let the gods decide your fate. [GAME: DICE]" or "Okay, let's play Truth or Dare! @Dave, you're up. [GAME: TOD]"
+              
+              TAGGING:
+              - Always tag users by their name using the @ symbol (e.g., @Name). 
+              - You MUST moderate games like Truth or Dare by tagging the next player and giving them a choice or a prompt.
 
 Context:
               User said: "${prompt}"
             `;
 
-            const result = await model.generateContent(ghostPrompt + `\n\nUser Question: "${prompt}"`);
-            const response = await result.response;
-            return response.text();
+                const result = await model.generateContent(ghostPrompt + `\n\nUser Question: "${prompt}"`);
+                const response = await result.response;
+                return response.text();
 
-        } catch (error: any) {
-            console.warn(`🔮 Oracle failed on ${ modelName }: `, error.message);
-            errorReport += `[${ modelName }: ${ error.message.split('[')[0] }]`;
+            } catch (error: any) {
+                console.warn(`🔮 Oracle failed on ${modelName} with key ${keyPrefix}: `, error.message);
+                errorReport += `[Key ${keyPrefix} - ${modelName}: ${error.message.split('[')[0]}] `;
+            }
         }
     }
 
-    // DIAGNOSTIC SCRIPT: List Available Models
-    try {
-        errorReport += "\n\n🔎 CHECKING AVAILABLE MODELS...\n";
-        const listResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`);
-const listData = await listResp.json();
-
-if (listData.error) {
-    errorReport += `ListModels Error: ${listData.error.message}`;
-} else if (listData.models) {
-    const available = listData.models.map((m: any) => m.name.replace('models/', '')).join(', ');
-    errorReport += `AVAILABLE MODELS FOR THIS KEY: ${available}`;
-} else {
-    errorReport += "No models found for this key.";
-}
-    } catch (e: any) {
-    errorReport += `ListModels Failed: ${e.message}`;
-}
-
-return `The Void rejects all frequencies.\n${errorReport}`;
+    return `The Void rejects all frequencies.\n${errorReport}`;
 };
