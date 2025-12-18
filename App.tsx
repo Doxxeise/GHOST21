@@ -356,26 +356,31 @@ const useKeywordTriggers = (inputText: string) => {
 
   const checkTriggers = (textInput: string) => {
     const text = textInput.toLowerCase().trim();
-    if (!text) return;
 
-    console.log("Checking trigger:", text); // DEBUG
+    // Clear effects if input is empty
+    if (!text) {
+      setEffect(null);
+      return;
+    }
 
+    // NSFW / Glitch trigger
     const NSFW_WORDS = ['boobs', 'breast', 'dick', 'suck', 'fuck', 'fine', 'fine shii', 'ugly'];
+    if (NSFW_WORDS.some(w => text.includes(w))) {
+      setEffect('glitch');
+      setTimeout(() => setEffect(null), 500);
+      return;
+    }
 
+    // Priority Check: Transient Effects (Those with timers)
+    // We only trigger these if the effect isn't already active to avoid loops
     if (text.includes('boom')) {
       setEffect('boom'); setTimeout(() => setEffect(null), 500);
     } else if (text.includes('void')) {
       setEffect('void'); setTimeout(() => setEffect(null), 2000);
     } else if (text.includes('spin')) {
       setEffect('spin'); setTimeout(() => setEffect(null), 1000);
-    } else if (text.includes('glitch') || NSFW_WORDS.some(w => text.includes(w))) {
+    } else if (text.includes('glitch')) {
       setEffect('glitch'); setTimeout(() => setEffect(null), 500);
-    } else if (text.includes('party')) {
-      setEffect(prev => (prev === 'party' ? null : 'party'));
-    } else if (text.includes('gravity')) {
-      setEffect(prev => (prev === 'gravity' ? null : 'gravity'));
-    } else if (text.includes('retro')) {
-      setEffect(prev => (prev === 'retro' ? null : 'retro'));
     } else if (text.includes('crush') || text.includes('love')) {
       setEffect('heartbeat'); setTimeout(() => setEffect(null), 3000);
     } else if (text.includes('secret')) {
@@ -390,6 +395,17 @@ const useKeywordTriggers = (inputText: string) => {
       setEffect('incourse'); setTimeout(() => setEffect(null), 5000);
     } else if (text.includes('pharmacy')) {
       setEffect('pharmacy'); setTimeout(() => setEffect(null), 3000);
+    }
+    // Persistent Effects (Stay as long as keyword is present)
+    else if (text.includes('party')) {
+      setEffect('party');
+    } else if (text.includes('gravity')) {
+      setEffect('gravity');
+    } else if (text.includes('retro')) {
+      setEffect('retro');
+    } else {
+      // Clear persistent effects if no longer matching
+      setEffect(prev => (['party', 'gravity', 'retro'].includes(prev || '') ? null : prev));
     }
   };
 
