@@ -887,33 +887,51 @@ export default function GhostChat() {
     const isOracleReply = replyingTo?.senderId === 'THE_ORACLE_BOT';
 
     if (isOracleMention || isOracleReply) {
+      // Show "Oracle is thinking" status by adding a placeholder "typing" user
+      await set(ref(db, `artifacts/${sanitizedAppId}/public/data/typing/${currentRoom?.id || 'public'}/THE_ORACLE_BOT`), {
+        name: "🔮 The Oracle",
+        timestamp: Date.now() + 10000 // Show for 10s or until cleared
+      });
+
       setTimeout(async () => {
         const contextPrompt = isOracleReply
           ? `(User is replying to your previous message: "${replyingTo.text}")\nUser says: ${msgText}`
           : msgText;
 
+        console.log("🔮 Asking Oracle...");
         const oracleResponse = await askOracle(contextPrompt);
+        console.log("🔮 Oracle responded:", oracleResponse);
+
+        // Clear Oracle typing status
+        await remove(ref(db, `artifacts/${sanitizedAppId}/public/data/typing/${currentRoom?.id || 'public'}/THE_ORACLE_BOT`));
+
         let finalText = oracleResponse;
         let pollData = null;
         let gameData = null;
 
         // Parse POLL: [POLL: "Question", "Opt1", "Opt2"]
+        // More robust parsing: look for any number of options
         if (oracleResponse.includes('[POLL:')) {
-          const pollMatch = oracleResponse.match(/\[POLL:\s*"(.*?)"\s*,\s*(.*?)\]/);
-          if (pollMatch) {
-            const question = pollMatch[1];
-            const optionsRaw = pollMatch[2].split(',').map(o => o.trim().replace(/"/g, ''));
-            const options: Record<string, number> = {};
-            optionsRaw.forEach(opt => { options[opt] = 0; });
+          const pollBlockMatch = oracleResponse.match(/\[POLL:\s*"(.*?)"\s*,\s*(.*?)\]/);
+          if (pollBlockMatch) {
+            const question = pollBlockMatch[1];
+            // Split options by comma but respect quotes
+            const optionsContent = pollBlockMatch[2];
+            const optionsRaw = optionsContent.split(/",\s*"/).map(o => o.replace(/^"|"$/g, '').trim());
 
-            finalText = oracleResponse.replace(/\[POLL:.*?\]/, '').trim();
-            pollData = {
-              question,
-              options,
-              deadline: Date.now() + 60000, // 60s for standard polls
-              resolved: false,
-              type: 'standard' as const
-            };
+            const options: Record<string, number> = {};
+            optionsRaw.forEach(opt => { if (opt) options[opt] = 0; });
+
+            if (Object.keys(options).length > 0) {
+              finalText = oracleResponse.replace(/\[POLL:.*?\]/, '').trim();
+              pollData = {
+                question,
+                options,
+                deadline: Date.now() + 60000,
+                resolved: false,
+                type: 'standard' as const
+              };
+            }
           }
         }
 
@@ -926,7 +944,7 @@ export default function GhostChat() {
             pollData = {
               question: `Vote to banish ${targetName}?`,
               options: { 'BANISH': 0, 'MERCY': 0 },
-              deadline: Date.now() + 15000, // 15s for kicks
+              deadline: Date.now() + 15000,
               resolved: false,
               type: 'kick' as const,
               target: targetName
@@ -963,7 +981,7 @@ export default function GhostChat() {
           poll: pollData,
           game: gameData
         });
-      }, 2000);
+      }, 1000);
     }
   };
 
