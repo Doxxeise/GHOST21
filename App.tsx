@@ -587,9 +587,9 @@ const SpiritDust = ({ intensity = 0 }: { intensity?: number }) => {
 const HelpModal = ({ onClose }: { onClose: () => void }) => {
   const features = [
     {
-      title: "🔮 The Oracle & Games",
-      desc: "An AI spirit that moderates your void. It can answer questions, create polls, and run games like 'Truth or Dare' by tagging players.",
-      commands: ["@oracle What is the meaning of life?", "@oracle flip a coin", "@oracle roll a dice", "@oracle play Truth or Dare"],
+      title: "🤖 AI Assistant & Games",
+      desc: "An intelligent assistant to help you. It can answer questions, create polls, and run games like 'Truth or Dare' by tagging players.",
+      commands: ["@oracle What is the weather?", "@oracle flip a coin", "@oracle roll a dice", "@oracle play Truth or Dare"],
       icon: <Sparkles size={16} />
     },
     {
@@ -650,10 +650,10 @@ const HelpModal = ({ onClose }: { onClose: () => void }) => {
           <div className="mt-8 p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/20">
             <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-widest mb-2">How to Use</h3>
             <ul className="text-xs text-slate-400 space-y-2 list-disc pl-4">
-              <li>Login with a ghost name and color.</li>
-              <li>Type in the public void to broadcast to all ghosts.</li>
+              <li>Login with a name and color.</li>
+              <li>Type in the public chat to broadcast to everyone.</li>
               <li>Toggle the <Ghost className="inline mx-1" size={12} /> icon to enter Poltergeist Mode.</li>
-              <li>Interact with The Oracle by mentioning it or replying to it.</li>
+              <li>Interact with The AI by mentioning it (@oracle) or replying to it.</li>
             </ul>
           </div>
         </div>
@@ -662,7 +662,7 @@ const HelpModal = ({ onClose }: { onClose: () => void }) => {
           onClick={onClose}
           className="w-full mt-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold uppercase tracking-widest transition-all shadow-lg shadow-indigo-500/20"
         >
-          Return to Void
+          Return to Chat
         </button>
       </div>
     </div>
@@ -1072,7 +1072,7 @@ export default function GhostChat() {
     if (isOracleMention || isOracleReply) {
       // Show "Oracle is thinking" status by adding a placeholder "typing" user
       await set(ref(db, `artifacts/${sanitizedAppId}/public/data/typing/${currentRoom?.id || 'public'}/THE_ORACLE_BOT`), {
-        name: "🔮 The Oracle",
+        name: "🤖 AI Assistant",
         timestamp: Date.now() + 10000 // Show for 10s or until cleared
       });
 
@@ -1085,9 +1085,9 @@ export default function GhostChat() {
           ? `(Available Users: ${participantsList})\n(User is replying to your previous message: "${replyingTo.text}")\nUser says: ${msgText}`
           : `(Available Users: ${participantsList})\nUser says: ${msgText}`;
 
-        console.log("🔮 Asking Oracle...");
+        console.log("🤖 Asking AI...");
         const oracleResponse = await askOracle(contextPrompt);
-        console.log("🔮 Oracle responded:", oracleResponse);
+        console.log("🤖 AI responded:", oracleResponse);
 
         // Clear Oracle typing status
         await remove(ref(db, `artifacts/${sanitizedAppId}/public/data/typing/${currentRoom?.id || 'public'}/THE_ORACLE_BOT`));
@@ -1164,8 +1164,8 @@ export default function GhostChat() {
         await push(ref(db, messagesPath), {
           text: finalText,
           senderId: "THE_ORACLE_BOT",
-          senderName: "🔮 The Oracle",
-          senderColor: "from-amber-300 to-yellow-500",
+          senderName: "🤖 AI Assistant",
+          senderColor: "from-blue-400 to-indigo-500",
           timestamp: serverTimestamp(),
           poll: pollData,
           game: gameData
@@ -1350,7 +1350,7 @@ export default function GhostChat() {
   }
 
   return (
-    <div className={`flex flex-col h-screen w-full bg-[#050505] text-slate-200 font-sans overflow-hidden relative selection:bg-purple-500/30 ${isTunneling ? 'animate-tunnel' : ''} ${keywordEffect === 'pharmacy' ? 'animate-glitch-ui' : ''}`}>
+    <div className={`flex flex-col h-screen w-full bg-[#050505] text-slate-200 font-sans overflow-hidden relative selection:bg-purple-500/30 ${isTunneling ? 'animate-tunnel' : ''} ${keywordEffect === 'pharmacy' ? 'animate-glitch-ui' : ''} ${containerClasses}`}>
 
       {/* Secret Overlays */}
       {isMatrix && <MatrixRain />}

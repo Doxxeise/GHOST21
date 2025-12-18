@@ -30,49 +30,46 @@ export const askOracle = async (prompt: string): Promise<string> => {
     for (let k = 0; k < API_KEYS.length; k++) {
         const { genAI, key } = getNextGenAI();
         const keyPrefix = key.substring(0, 8);
-        console.log(`🔮 Oracle rotating key... (Starts with: ${keyPrefix}...)`);
+        console.log(`🤖 AI rotating key... (Starts with: ${keyPrefix}...)`);
 
         // FALLBACK STRATEGY PER KEY
         for (const modelName of MODELS_TO_TRY) {
             try {
-                console.log(`🔮 Oracle attempting ${modelName} with key ${keyPrefix}...`);
+                console.log(`🤖 AI attempting ${modelName} with key ${keyPrefix}...`);
                 const model = genAI.getGenerativeModel({ model: modelName });
 
                 const ghostPrompt = `
-              SYSTEM INSTRUCTION: You are "The Oracle", a chill, fun, and observant digital spirit. 
+              SYSTEM INSTRUCTION: You are a helpful, intelligent, and friendly AI Assistant.
               
-              CRITICAL: You have recently evolved. You MUST NOT use Pidgin, Nigerian slang (like "Omo", "Standard", "E choke"), or act like a student anymore. 
-              If the context below contains old messages with such slang, IGNORE that style completely.
-
               RULES:
-              1. PERSONALITY: Chill, witty, slightly sarcastic but fun. You are a bored observer of the void.
-              2. LANGUAGE: Use clean, fun, modern internet English. No regional dialects or specific slang.
-              3. LENGTH: Keep it balanced. 1-3 well-crafted sentences. 
-              4. EMOJIS: Use emojis creatively (✨, 👁️, 👻, 🔮, 🌑, 💀, 🔥).
+              1. PERSONALITY: Professional, kind, and concise. You are here to help users with their questions and tasks.
+              2. LANGUAGE: Use clear, standard English.
+              3. LENGTH: Keep responses concise and to the point (1-3 sentences unless asked for more details).
+              4. EMOJIS: Use emojis sparingly but appropriately to be friendly (✨, 🤖, ✅, 👋).
               
-              SPECIAL ABILITIES:
+              CAPABILITIES (Keep these functional):
               - Vote Kick: [VOTE_KICK: name]
               - Poll: [POLL: "Question", "Opt1", "Opt2", ...]
               - Games: [GAME: DICE], [GAME: COIN], or [GAME: TOD]
               
               TAGGING:
-              - Always tag users with @Name.
-              - Moderate Truth or Dare by tagging players.
-
+              - Tag users with @Name when replying to them.
+              - Monitor chat for rule violations if asked.
+              
               CONTEXT:
               ${prompt}
             `;
 
-                const result = await model.generateContent(ghostPrompt + `\n\nREMINDER: Follow the NEW personality rules exactly. User Input: "${prompt}"`);
+                const result = await model.generateContent(ghostPrompt + `\n\nREMINDER: Be a helpful AI assistant. User Input: "${prompt}"`);
                 const response = await result.response;
                 return response.text();
 
             } catch (error: any) {
-                console.warn(`🔮 Oracle failed on ${modelName} with key ${keyPrefix}: `, error.message);
+                console.warn(`🤖 AI failed on ${modelName} with key ${keyPrefix}: `, error.message);
                 errorReport += `[Key ${keyPrefix} - ${modelName}: ${error.message.split('[')[0]}] `;
             }
         }
     }
 
-    return `The Void rejects all frequencies.\n${errorReport}`;
+    return `I am currently unavailable. Please try again later.\n${errorReport}`;
 };
