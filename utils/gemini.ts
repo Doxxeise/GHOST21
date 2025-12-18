@@ -8,13 +8,15 @@ const genAI = new GoogleGenerativeAI(API_KEY);
 
 // User explicitly requested "gemini-2.5-flash".
 const MODELS_TO_TRY = [
+    "gemini-3-flash-preview",
+    "gemini-3-pro-preview",
     "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
     "gemini-1.5-pro",
-    "gemini-1.5-pro-latest",
-    "gemini-2.0-flash-exp",
     "gemini-1.5-flash",
-    "gemini-1.0-pro",
-    "gemini-pro"
+    "gemini-1.0-pro"
 ];
 
 export const askOracle = async (prompt: string): Promise<string> => {
