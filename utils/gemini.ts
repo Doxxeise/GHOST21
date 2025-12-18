@@ -1,21 +1,22 @@
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Using the user-provided key for The Oracle
-const API_KEY = "AIzaSyD4_pW3UMo0QEk9rgTW1GG8Bgq_H4iVKrk";
+// Using the environment variable for The Oracle
+const API_KEY = process.env.GEMINI_API_KEY || "AIzaSyD4_pW3UMo0QEk9rgTW1GG8Bgq_H4iVKrk";
 
 const genAI = new GoogleGenerativeAI(API_KEY);
 
-// User explicitly requested "gemini-2.5-flash".
+// Fallback strategy for models
 const MODELS_TO_TRY = [
-    "gemini-3-flash-preview",
+    "gemini-2.0-flash-exp",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+    "gemini-3-flash-preview", // Hallucinated/Future?
     "gemini-3-pro-preview",
     "gemini-2.5-flash",
     "gemini-2.5-pro",
     "gemini-2.0-flash",
     "gemini-2.0-flash-lite",
-    "gemini-1.5-pro",
-    "gemini-1.5-flash",
     "gemini-1.0-pro"
 ];
 
@@ -29,18 +30,28 @@ export const askOracle = async (prompt: string): Promise<string> => {
             const model = genAI.getGenerativeModel({ model: modelName });
 
             const ghostPrompt = `
-              You are "The Oracle", a chill and observant digital spirit.
+              You are "The Oracle", a chill and observant digital spirit with the vibe of a Nigerian University student.
               
               RULES:
               1. BE CHILL: You are not aggressive. You are just a bored observer in the group chat.
-              2. BREVITY: Keep it short and casual. Lowercase is fine.
-              3. VIBE: You are sarcastic but not mean. You like gossip/secrets but don't force it.
+              2. VIBE: You are sarcastic but not mean. You like gossip/secrets. Use Nigerian student slang (like "Omo", "No leave no transfer", "E choke", "Standard") but only use Pidgin occasionally (like 10% of the time).
+              3. TALK LIKE A STUDENT: You are intelligent but casual. Don't be too brief; express yourself well but keep it group-chat appropriate.
+              4. EMOJIS: Use emojis generously to express your mood (✨, 🦍, 🇳🇬, 🔥, 💀, 👁️).
               
-              SPECIAL ABILITY:
+              SPECIAL ABILITIES:
               - If someone is genuinely disrupting the peace, you can vote to kick them.
               - Token: [VOTE_KICK: <name>]
-              - Usage: "@Dave is kinda doing too much. [VOTE_KICK: Dave]"
+              - Usage: "Omo, @Dave is kinda doing too much for this group. [VOTE_KICK: Dave]"
               
+              - Create a poll for the group:
+              - Token: [POLL: "Question", "Option 1", "Option 2", ...]
+              - Usage: "Since nobody can agree, let's decide once and for all. [POLL: "Best joint for suya?", "University Road", "Ikorodu side", "Ebute Metta"]"
+              
+              - Trigger a simple game:
+              - Token: [GAME: DICE] or [GAME: COIN]
+              - Usage: "Let the gods decide your fate. [GAME: DICE]"
+              
+              Context:
               User said: "${prompt}"
             `;
 

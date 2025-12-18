@@ -56,11 +56,17 @@ interface Message {
   isPoltergeist?: boolean;
   startImage?: string;
   poll?: {
-    target: string;
-    yes: number;
-    no: number;
+    question: string;
+    options: Record<string, number>;
     deadline: number;
     resolved: boolean;
+    type: 'kick' | 'standard';
+    target?: string;
+  };
+  reactions?: Record<string, Record<string, boolean>>; // emoji -> { userId: true }
+  game?: {
+    type: 'DICE' | 'COIN';
+    result: string;
   };
 }
 
@@ -520,6 +526,25 @@ export default function GhostChat() {
   // Initialize Emoji Library
   const { floatingEmojis, triggerReaction } = useEmojiLibrary(user);
 
+  const toggleReaction = async (messageId: string, emoji: string) => {
+    if (!user) return;
+    const messagesPath = currentRoom
+      ? `artifacts/${sanitizedAppId}/public/data/private_chats/${currentRoom.id}`
+      : `artifacts/${sanitizedAppId}/public/data/ghost_messages`;
+
+    const reactionRef = ref(db, `${messagesPath}/${messageId}/reactions/${emoji}/${user.uid}`);
+
+    await runTransaction(ref(db, `${messagesPath}/${messageId}/reactions/${emoji}`), (current) => {
+      const reactions = current || {};
+      if (reactions[user.uid]) {
+        delete reactions[user.uid];
+      } else {
+        reactions[user.uid] = true;
+      }
+      return reactions;
+    });
+  };
+
   // Secret Animations
   const { playPing, playWarp, playSecret } = useSoundEffects();
   const isMatrix = useKonamiCode();
@@ -868,26 +893,60 @@ export default function GhostChat() {
           : msgText;
 
         const oracleResponse = await askOracle(contextPrompt);
-        // Post as Oracle
-        // We need to bypass the "user" check in postMessage for a bot, or impersonate one.
-        // Since postMessage relies on 'user' state, we can manually push to DB like a bot.
-
         let finalText = oracleResponse;
         let pollData = null;
+        let gameData = null;
 
-        // Parse VOTE_KICK
-        if (oracleResponse.includes('[VOTE_KICK:')) {
-          const match = oracleResponse.match(/\[VOTE_KICK:\s*(.*?)\]/);
-          if (match) {
-            const targetName = match[1].trim();
-            finalText = oracleResponse.replace(match[0], '').trim();
+        // Parse POLL: [POLL: "Question", "Opt1", "Opt2"]
+        if (oracleResponse.includes('[POLL:')) {
+          const pollMatch = oracleResponse.match(/\[POLL:\s*"(.*?)"\s*,\s*(.*?)\]/);
+          if (pollMatch) {
+            const question = pollMatch[1];
+            const optionsRaw = pollMatch[2].split(',').map(o => o.trim().replace(/"/g, ''));
+            const options: Record<string, number> = {};
+            optionsRaw.forEach(opt => { options[opt] = 0; });
+
+            finalText = oracleResponse.replace(/\[POLL:.*?\]/, '').trim();
             pollData = {
-              target: targetName,
-              yes: 0,
-              no: 0,
-              deadline: Date.now() + 15000, // 15s duration
-              resolved: false
+              question,
+              options,
+              deadline: Date.now() + 60000, // 60s for standard polls
+              resolved: false,
+              type: 'standard' as const
             };
+          }
+        }
+
+        // Parse VOTE_KICK: [VOTE_KICK: name]
+        if (oracleResponse.includes('[VOTE_KICK:')) {
+          const kickMatch = oracleResponse.match(/\[VOTE_KICK:\s*(.*?)\]/);
+          if (kickMatch) {
+            const targetName = kickMatch[1].trim();
+            finalText = finalText.replace(kickMatch[0], '').trim();
+            pollData = {
+              question: `Vote to banish ${targetName}?`,
+              options: { 'BANISH': 0, 'MERCY': 0 },
+              deadline: Date.now() + 15000, // 15s for kicks
+              resolved: false,
+              type: 'kick' as const,
+              target: targetName
+            };
+          }
+        }
+
+        // Parse GAME: [GAME: DICE] or [GAME: COIN]
+        if (oracleResponse.includes('[GAME:')) {
+          const gameMatch = oracleResponse.match(/\[GAME:\s*(DICE|COIN)\]/i);
+          if (gameMatch) {
+            const type = gameMatch[1].toUpperCase() as 'DICE' | 'COIN';
+            finalText = finalText.replace(gameMatch[0], '').trim();
+            let result = "";
+            if (type === 'DICE') {
+              result = (Math.floor(Math.random() * 6) + 1).toString();
+            } else {
+              result = Math.random() > 0.5 ? 'HEADS' : 'TAILS';
+            }
+            gameData = { type, result };
           }
         }
 
@@ -899,11 +958,12 @@ export default function GhostChat() {
           text: finalText,
           senderId: "THE_ORACLE_BOT",
           senderName: "🔮 The Oracle",
-          senderColor: "from-amber-300 to-yellow-500", // Gold
+          senderColor: "from-amber-300 to-yellow-500",
           timestamp: serverTimestamp(),
-          poll: pollData
+          poll: pollData,
+          game: gameData
         });
-      }, 2000); // 2s delay for "thinking"
+      }, 2000);
     }
   };
 
@@ -1407,89 +1467,92 @@ export default function GhostChat() {
                   </div>
                 )}
 
-                {/* Poll Rendering Logic for Oracle */}
-                {/* Poll Rendering Logic for Oracle */}
+                {/* Poll Rendering Logic */}
                 {msg.poll && (
-                  <div className="mt-3 p-3 bg-red-900/40 rounded-lg border border-red-500/30">
-                    <div className="flex items-center gap-2 mb-2 text-red-300 font-bold text-xs uppercase tracking-widest">
-                      <AlertCircle size={14} /> Tribunal Initiated
+                  <div className={`mt-3 p-3 rounded-lg border ${msg.poll.type === 'kick' ? 'bg-red-900/40 border-red-500/30' : 'bg-slate-900/40 border-slate-500/30'}`}>
+                    <div className={`flex items-center gap-2 mb-2 font-bold text-xs uppercase tracking-widest ${msg.poll.type === 'kick' ? 'text-red-300' : 'text-slate-300'}`}>
+                      <AlertCircle size={14} /> {msg.poll.type === 'kick' ? 'Tribunal Initiated' : 'Community Poll'}
                     </div>
                     <p className="text-sm font-bold text-white mb-2">
-                      Vote to banish {msg.poll.target}?
+                      {msg.poll.question}
                     </p>
 
                     {/* Timer */}
-                    <div className="mb-2 w-full bg-red-900/30 h-1 rounded-full overflow-hidden">
+                    <div className="mb-2 w-full bg-white/5 h-1 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-red-500 transition-all duration-1000 ease-linear"
-                        style={{ width: `${Math.max(0, Math.min(100, ((msg.poll.deadline - Date.now()) / 15000) * 100))}%` }}
+                        className={`h-full transition-all duration-1000 ease-linear ${msg.poll.type === 'kick' ? 'bg-red-500' : 'bg-indigo-500'}`}
+                        style={{ width: `${Math.max(0, Math.min(100, ((msg.poll.deadline - Date.now()) / (msg.poll.type === 'kick' ? 15000 : 60000)) * 100))}%` }}
                       />
                     </div>
 
-                    <div className="flex gap-2">
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (localStorage.getItem(`voted_${msg.id}`)) {
-                            showNotification("One citizen, one vote.");
-                            return;
-                          }
-                          localStorage.setItem(`voted_${msg.id}`, 'true');
-                          const msgRef = ref(db, `artifacts/${sanitizedAppId}/public/data/ghost_messages/${msg.id}/poll/yes`);
-                          await runTransaction(msgRef, (current) => (current || 0) + 1);
-                        }}
-                        className={`flex-1 bg-red-600 hover:bg-red-500 text-white py-1 rounded text-xs font-bold transition-colors flex justify-between px-3 cursor-pointer ${localStorage.getItem(`voted_${msg.id}`) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      >
-                        <span>BANISH</span>
-                        <span>{msg.poll.yes || 0}</span>
-                      </button>
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (localStorage.getItem(`voted_${msg.id}`)) {
-                            showNotification("One citizen, one vote.");
-                            return;
-                          }
-                          localStorage.setItem(`voted_${msg.id}`, 'true');
-                          const msgRef = ref(db, `artifacts/${sanitizedAppId}/public/data/ghost_messages/${msg.id}/poll/no`);
-                          await runTransaction(msgRef, (current) => (current || 0) + 1);
-                        }}
-                        className={`flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 py-1 rounded text-xs font-bold transition-colors flex justify-between px-3 cursor-pointer ${localStorage.getItem(`voted_${msg.id}`) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      >
-                        <span>MERCY</span>
-                        <span>{msg.poll.no || 0}</span>
-                      </button>
+                    <div className="grid grid-cols-1 gap-2">
+                      {Object.entries(msg.poll.options).map(([option, count]) => (
+                        <button
+                          key={option}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (localStorage.getItem(`voted_${msg.id}`)) {
+                              showNotification("One citizen, one vote.");
+                              return;
+                            }
+                            localStorage.setItem(`voted_${msg.id}`, 'true');
+                            const messagesPath = currentRoom
+                              ? `artifacts/${sanitizedAppId}/public/data/private_chats/${currentRoom.id}`
+                              : `artifacts/${sanitizedAppId}/public/data/ghost_messages`;
+                            const optRef = ref(db, `${messagesPath}/${msg.id}/poll/options/${option}`);
+                            await runTransaction(optRef, (current) => (current || 0) + 1);
+                          }}
+                          className={`flex-1 py-1.5 rounded text-xs font-bold transition-colors flex justify-between px-3 cursor-pointer ${msg.poll?.type === 'kick' && option === 'BANISH' ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                            } ${localStorage.getItem(`voted_${msg.id}`) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                          <span>{option}</span>
+                          <span>{count || 0}</span>
+                        </button>
+                      ))}
                     </div>
 
-                    {/* Resolution Check (Client Side Trigger) */}
+                    {/* Resolution Check */}
                     {msg.poll.deadline < Date.now() && (
-                      <div className="mt-2 text-xs text-center font-mono text-red-400">
-                        {msg.poll.yes > msg.poll.no
-                          ? "VERDICT: GUILTY. EXECUTING PROTOCOL..."
-                          : "VERDICT: INNOCENT. THE VOID RECEDES."}
-                        {/* Actual Effect Trigger */}
-                        {(() => {
-                          if (msg.poll.yes > msg.poll.no && msg.poll.target.toLowerCase() === profile.name.toLowerCase()) {
-                            // Check if we are freshly expired (within 55s) to avoid re-kicking old polls on reload
-                            if (Date.now() - msg.poll.deadline < 55000) {
-                              // Set a flag to avoid repeated reloads in same session
-                              if (!sessionStorage.getItem(`banned_${msg.id}`)) {
-                                sessionStorage.setItem(`banned_${msg.id}`, 'true');
-                                setTimeout(() => {
-                                  localStorage.removeItem('ghost_profile'); // Reset Identity
-                                  window.location.reload(); // Hard Kick
-                                }, 3000);
+                      <div className={`mt-2 text-[10px] text-center font-mono ${msg.poll.type === 'kick' ? 'text-red-400' : 'text-slate-400'}`}>
+                        {msg.poll.type === 'kick' ? (
+                          <>
+                            {(() => {
+                              const yes = msg.poll.options['BANISH'] || 0;
+                              const no = msg.poll.options['MERCY'] || 0;
+                              const result = yes > no ? "GUILTY. EXECUTING..." : "INNOCENT. VOID RECEDES.";
+
+                              if (yes > no && msg.poll.target?.toLowerCase() === profile.name.toLowerCase()) {
+                                if (Date.now() - msg.poll.deadline < 55000) {
+                                  if (!sessionStorage.getItem(`banned_${msg.id}`)) {
+                                    sessionStorage.setItem(`banned_${msg.id}`, 'true');
+                                    setTimeout(() => {
+                                      localStorage.removeItem('ghost_profile');
+                                      window.location.reload();
+                                    }, 3000);
+                                  }
+                                }
                               }
-                            }
-                          }
-                          return null;
-                        })()}
+                              return `VERDICT: ${result}`;
+                            })()}
+                          </>
+                        ) : "POLL CLOSED"}
                       </div>
                     )}
                   </div>
                 )}
-                {/* End Poll Logic */}
-                {/* End Poll Logic */}
+
+                {/* Game Rendering Logic */}
+                {msg.game && (
+                  <div className="mt-2 p-3 bg-white/5 rounded-lg border border-white/10 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Sparkles size={16} className="text-amber-400" />
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{msg.game.type} ROLL</span>
+                    </div>
+                    <div className="text-xl font-bold text-white animate-bounce">
+                      {msg.game.type === 'DICE' ? `🎲 ${msg.game.result}` : `🪙 ${msg.game.result}`}
+                    </div>
+                  </div>
+                )}
 
                 {msg.startImage && (
                   <img
@@ -1500,14 +1563,58 @@ export default function GhostChat() {
                 )}
                 {msg.text}
 
-                {/* Reply Button */}
-                <button
-                  onClick={() => setReplyingTo(msg)}
-                  className={`absolute top-1/2 -translate-y-1/2 ${isMe ? '-left-10' : '-right-10'} p-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-400 opacity-0 group-hover:opacity-100 transition-all duration-300 hover:text-white`}
-                  title="Reply"
-                >
-                  <Reply size={14} className="scale-x-[-1]" />
-                </button>
+                {/* Reactions Display */}
+                {msg.reactions && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {Object.entries(msg.reactions).map(([emoji, users]) => {
+                      const count = Object.keys(users).length;
+                      if (count === 0) return null;
+                      const hasReacted = user && users[user.uid];
+                      return (
+                        <button
+                          key={emoji}
+                          onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, emoji); }}
+                          className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold transition-all ${hasReacted ? 'bg-white/20 text-white ring-1 ring-white/30' : 'bg-black/20 text-slate-400 hover:bg-black/40'
+                            }`}
+                        >
+                          <span>{emoji}</span>
+                          <span>{count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Reply & React Buttons */}
+                <div className={`absolute top-1/2 -translate-y-1/2 ${isMe ? '-left-12' : '-right-12'} flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-all duration-300`}>
+                  <button
+                    onClick={() => setReplyingTo(msg)}
+                    className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white"
+                    title="Reply"
+                  >
+                    <Reply size={14} className="scale-x-[-1]" />
+                  </button>
+                  <div className="relative group/picker">
+                    <button
+                      className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white"
+                      title="React"
+                    >
+                      <Sparkles size={14} />
+                    </button>
+                    {/* Mini Emoji Picker */}
+                    <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover/picker:flex items-center gap-1 p-1 bg-slate-900/90 backdrop-blur-md rounded-xl border border-white/10 shadow-2xl z-[70]">
+                      {LIBRARY_EMOJIS.map(emoji => (
+                        <button
+                          key={emoji}
+                          onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, emoji); }}
+                          className="hover:scale-125 transition-transform p-1"
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           );
@@ -1522,23 +1629,25 @@ export default function GhostChat() {
         <EmojiDock onReact={handleReaction} />
 
         {/* Reply Preview Banner */}
-        {replyingTo && (
-          <div className="flex items-center justify-between bg-indigo-900/30 border border-white/10 border-b-0 rounded-t-2xl px-5 py-2 mx-2 -mb-2 z-0 backdrop-blur-xl animate-slide-up">
-            <div className="flex items-center gap-3 text-xs text-slate-300 overflow-hidden">
-              <Reply size={14} className="scale-x-[-1] text-indigo-400 shrink-0" />
-              <div className="flex flex-col">
-                <span className="font-bold text-indigo-300">Replying to {replyingTo.senderName}</span>
-                <span className="opacity-60 truncate max-w-[200px] md:max-w-md italic flex items-center gap-1">
-                  {replyingTo.startImage && <ImageIcon size={12} />}
-                  <span>"{replyingTo.text || 'Image'}"</span>
-                </span>
+        {
+          replyingTo && (
+            <div className="flex items-center justify-between bg-indigo-900/30 border border-white/10 border-b-0 rounded-t-2xl px-5 py-2 mx-2 -mb-2 z-0 backdrop-blur-xl animate-slide-up">
+              <div className="flex items-center gap-3 text-xs text-slate-300 overflow-hidden">
+                <Reply size={14} className="scale-x-[-1] text-indigo-400 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-bold text-indigo-300">Replying to {replyingTo.senderName}</span>
+                  <span className="opacity-60 truncate max-w-[200px] md:max-w-md italic flex items-center gap-1">
+                    {replyingTo.startImage && <ImageIcon size={12} />}
+                    <span>"{replyingTo.text || 'Image'}"</span>
+                  </span>
+                </div>
               </div>
+              <button onClick={() => setReplyingTo(null)} className="p-1.5 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-colors">
+                <X size={14} />
+              </button>
             </div>
-            <button onClick={() => setReplyingTo(null)} className="p-1.5 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-colors">
-              <X size={14} />
-            </button>
-          </div>
-        )}
+          )
+        }
 
         <div className={`
           relative bg-black/40 backdrop-blur-3xl border border-white/10 transition-all duration-500 rounded-3xl p-1.5 flex items-end gap-2 shadow-2xl focus-within:border-white/20 z-10
@@ -1613,7 +1722,7 @@ export default function GhostChat() {
             <Send size={18} className="ml-0.5" strokeWidth={2.5} />
           </button>
         </div>
-      </footer>
+      </footer >
     </div >
   );
 }
